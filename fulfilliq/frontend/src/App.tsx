@@ -171,15 +171,15 @@ function CustomerOrders() {
   return <div className="orders-page"><div className="eyebrow">FULFILLMENT HISTORY</div><h1>Orders, in motion.</h1><p className="muted">Track each demo order from store selection through delivery.</p>{error && <QueryError error={error}/ >}{isLoading && <Loading />}{data?.map((o) => <article className="order-card" key={o.id}><div><div className="eyebrow">ORDER #{String(o.id).padStart(5, '0')}</div><h3>{o.items.map((x: any) => x.product_name + ' × ' + x.quantity).join(', ')}</h3><p>{o.store_name} · {new Date(o.timestamp).toLocaleString()}</p></div><Status value={o.status}/><div className="order-steps">{['Confirmed', 'Store selected', 'Preparing', 'Out for delivery', 'Delivered'].map((s, i) => <span key={s} className={i <= ['CONFIRMED','STORE_SELECTED','PREPARING','OUT_FOR_DELIVERY','DELIVERED'].indexOf(o.status) ? 'done' : ''}><i>{i + 1}</i>{s}</span>)}</div><div className="order-foot">Total <b>{cash(o.total_amount)}</b><small>Tracking is simulated</small></div></article>)}{!isLoading && !data?.length && <Empty title="No orders yet" text="Demo orders will appear here after checkout."/>}</div>
 }
 
-const managerLinks = [['/store', 'Overview'], ['/store/inventory', 'Inventory'], ['/store/forecast', 'Forecast & alerts'], ['/store/recommendations', 'Recommendations'], ['/store/orders', 'Incoming orders']]
-const adminLinks = [['/admin', 'Overview'], ['/admin/map', 'Network map'], ['/admin/inventory', 'Inventory'], ['/admin/orders', 'Orders'], ['/admin/predictions', 'Predictions'], ['/admin/analytics', 'Analytics'], ['/admin/training', 'Model training'], ['/admin/simulation', 'Simulation'], ['/admin/catalog', 'Stores & products']]
+const managerLinks = [['/store', 'Overview'], ['/store/inventory', 'Inventory'], ['/store/forecast', 'Forecast & alerts'], ['/store/recommendations', 'Recommendations'], ['/store/orders', 'Incoming orders'], ['/store/events', 'Event ledger'], ['/store/reconciliation', 'Reconciliation']]
+const adminLinks = [['/admin', 'Overview'], ['/admin/map', 'Network map'], ['/admin/inventory', 'Inventory'], ['/admin/orders', 'Orders'], ['/admin/predictions', 'Predictions'], ['/admin/analytics', 'Analytics'], ['/admin/events', 'Event ledger'], ['/admin/reconciliation', 'Reconciliation'], ['/admin/training', 'Model training'], ['/admin/simulation', 'Simulation'], ['/admin/catalog', 'Stores & products']]
 function Ops({ admin }: { admin: boolean }) {
   const { user, logout } = useSession()
   const path = useLocation().pathname
   const links = admin ? adminLinks : managerLinks
   return <div className="ops-shell"><aside className="sidebar"><Link to={admin ? '/admin' : '/store'} className="wordmark"><span className="brand-mark">F</span>Fulfill<span>IQ</span></Link><small className="sidebar-caption">WORKSPACE</small><nav>{links.map(([url, label]) => <Link to={url} key={url} className={path === url ? 'nav-link active' : 'nav-link'}><span className="nav-dot"/>{label}{label === 'Model training' && <BrainCircuit size={15}/>}</Link>)}</nav><div className="sidebar-bottom"><span className="live-dot">●</span> SIMULATED COIMBATORE<button onClick={logout}><UserRound size={15}/>{user?.email}<LogOut size={15}/></button></div></aside><main className="ops-main"><header className="ops-top"><span>{admin ? 'Platform operations' : 'Store operations'} / <b>{links.find((x) => x[0] === path)?.[1]}</b></span><span className="data-chip">DEMO ENVIRONMENT</span></header><div className="ops-content"><Routes>{admin ? <>
-    <Route index element={<AdminOverview/>}/><Route path="map" element={<AdminMap/>}/><Route path="inventory" element={<Inventory admin/>}/><Route path="orders" element={<OpsOrders admin/>}/><Route path="predictions" element={<Predictions/>}/><Route path="analytics" element={<Analytics/>}/><Route path="training" element={<Training/>}/><Route path="simulation" element={<Simulation/>}/><Route path="catalog" element={<Catalog/>}/>
-  </> : <><Route index element={<StoreOverview/>}/><Route path="inventory" element={<Inventory admin={false}/>}/><Route path="forecast" element={<StoreForecast/>}/><Route path="recommendations" element={<Recommendations/>}/><Route path="orders" element={<OpsOrders admin={false}/>}/></>}</Routes></div></main></div>
+    <Route index element={<AdminOverview/>}/><Route path="map" element={<AdminMap/>}/><Route path="inventory" element={<Inventory admin/>}/><Route path="orders" element={<OpsOrders admin/>}/><Route path="predictions" element={<Predictions/>}/><Route path="analytics" element={<Analytics/>}/><Route path="events" element={<EventLedger admin/>}/><Route path="reconciliation" element={<ReconciliationView admin/>}/><Route path="training" element={<Training/>}/><Route path="simulation" element={<Simulation/>}/><Route path="catalog" element={<Catalog/>}/>
+  </> : <><Route index element={<StoreOverview/>}/><Route path="inventory" element={<Inventory admin={false}/>}/><Route path="forecast" element={<StoreForecast/>}/><Route path="recommendations" element={<Recommendations/>}/><Route path="orders" element={<OpsOrders admin={false}/>}/><Route path="events" element={<EventLedger admin={false}/>}/><Route path="reconciliation" element={<ReconciliationView admin={false}/>}/></>}</Routes></div></main></div>
 }
 
 function Title({ eyebrow, title, text, action }: { eyebrow: string; title: string; text: string; action?: React.ReactNode }) { return <div className="page-title"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{text}</p></div>{action}</div> }
@@ -238,6 +238,64 @@ function Recommendations() {
 function OpsOrders({ admin }: { admin: boolean }) {
   const { data = [], isLoading, error } = useApi<any[]>(['orders', admin], admin ? '/admin/orders' : '/store/orders')
   return <><Title eyebrow="SIMULATED ORDERS" title="Orders in motion." text="Order queue from the FulfillIQ customer checkout flow."/>{error && <QueryError error={error}/ >}{isLoading ? <Loading/> : <Panel title={data.length + ' recent orders'}><div className="table-wrap"><table><thead><tr><th>Order</th><th>Store</th><th>Products</th><th>Placed</th><th>Total</th><th>Status</th></tr></thead><tbody>{data.map((o: any) => <tr key={o.id}><td>#{String(o.id).padStart(5,'0')}</td><td>{o.store_name}</td><td>{o.items.map((i: any) => i.product_name + ' × ' + i.quantity).join(', ')}</td><td>{new Date(o.timestamp).toLocaleString()}</td><td>{cash(o.total_amount)}</td><td><Status value={o.status}/></td></tr>)}</tbody></table></div></Panel>}</>
+}
+
+const SOURCE_COLORS: Record<string, string> = { POS: '#3d8064', WMS: '#4a7fb5', ERP: '#b57a2e', RFID: '#8b5eb0' }
+
+function EventLedger({ admin }: { admin: boolean }) {
+  const { user } = useSession()
+  const [source, setSource] = useState('')
+  const [storeFilter, setStoreFilter] = useState('')
+  const url = '/admin/events?limit=200' + (source ? '&source=' + source : '') + (!admin && user?.store_id ? '&store_id=' + user.store_id : '') + (storeFilter ? '&store_id=' + storeFilter : '')
+  const { data = [], isLoading, error, refetch } = useApi<any[]>(['events', source, storeFilter, admin], url)
+  const { data: summary } = useApi<any>(['source-summary'], '/admin/source-summary', admin)
+  return <>
+    <Title eyebrow={admin ? 'MULTI-SOURCE EVENT LEDGER' : 'STORE EVENT LEDGER'} title="Every signal, every source." text="POS, WMS, ERP and RFID events flowing into the inventory reconciliation engine." action={<button className="button secondary" onClick={() => refetch()}><RefreshCw size={15}/> Refresh</button>}/>
+    {admin && summary && <div className="kpi-grid">{Object.entries(summary).map(([src, data]: [string, any]) => <KPI key={src} title={src + ' events'} value={data.total.toLocaleString()} note={Object.keys(data.event_types).length + ' event types'} icon={src === 'POS' ? StoreIcon : src === 'WMS' ? Boxes : src === 'RFID' ? Activity : ClipboardList}/>)}</div>}
+    <Panel title={data.length + ' events'} subtitle="Most recent events across all sources." action={<div className="filter-row">
+      <select value={source} onChange={(e) => setSource(e.target.value)}><option value="">All sources</option><option value="POS">POS</option><option value="WMS">WMS</option><option value="ERP">ERP</option><option value="RFID">RFID</option></select>
+      {admin && <input className="table-search" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} placeholder="Store ID"/>}
+    </div>}>
+      {error && <QueryError error={error}/>}{isLoading ? <Loading/> : <div className="table-wrap"><table><thead><tr><th>Source</th><th>Event</th><th>Store</th><th>Product</th><th>Δ Qty</th><th>Reported</th><th>Timestamp</th><th>Note</th></tr></thead><tbody>
+        {data.map((e: any) => <tr key={e.id}><td><span className="source-badge" style={{ background: SOURCE_COLORS[e.source] || '#666' }}>{e.source}</span></td><td>{e.event_type.replaceAll('_', ' ')}</td><td>Store {e.store_id}</td><td>#{e.product_id}</td><td className={e.quantity_delta > 0 ? 'text-green' : e.quantity_delta < 0 ? 'text-red' : ''}>{e.quantity_delta > 0 ? '+' : ''}{e.quantity_delta}</td><td>{e.reported_quantity ?? '—'}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td><td><small>{e.note}</small></td></tr>)}
+      </tbody></table></div>}
+    </Panel>
+  </>
+}
+
+function ReconciliationView({ admin }: { admin: boolean }) {
+  const { user } = useSession()
+  const [storeId, setStoreId] = useState(admin ? '1' : String(user?.store_id || '1'))
+  const [productId, setProductId] = useState('1')
+  const url = '/admin/reconciliation/' + storeId + '/' + productId
+  const { data, isLoading, error, refetch } = useApi<any>(['reconciliation', storeId, productId], url, !!storeId && !!productId)
+  return <>
+    <Title eyebrow="INVENTORY RECONCILIATION" title="Four sources, one truth." text="Compare what POS, WMS, ERP and RFID report for the same SKU at the same store." action={<button className="button secondary" onClick={() => refetch()}><RefreshCw size={15}/> Refresh</button>}/>
+    <Panel title="Lookup" subtitle="Enter a store and product to reconcile.">
+      <div className="filter-row"><label>Store ID <input value={storeId} onChange={(e) => setStoreId(e.target.value)} type="number" min="1" style={{ width: 80 }}/></label><label>Product ID <input value={productId} onChange={(e) => setProductId(e.target.value)} type="number" min="1" style={{ width: 80 }}/></label><button className="button primary" onClick={() => refetch()}>Reconcile <ArrowRight size={15}/></button></div>
+    </Panel>
+    {error && <QueryError error={error}/>}{isLoading && <Loading/>}
+    {data && <>
+      <div className="kpi-grid">
+        <KPI title="Reported quantity" value={data.current_reported_quantity ?? '—'} note="Current book value" icon={Package}/>
+        <KPI title="Discrepancy spread" value={data.discrepancy_spread} note={data.discrepancy_spread >= 5 ? 'Sources strongly disagree' : data.discrepancy_spread >= 2 ? 'Minor disagreement' : 'Sources agree'} icon={AlertTriangle}/>
+        <KPI title="Estimated confidence" value={Math.round(data.estimated_confidence * 100) + '%'} note={'Accuracy: ' + (data.inventory_accuracy ? Math.round(data.inventory_accuracy * 100) + '%' : 'N/A')} icon={Activity}/>
+        <KPI title="Recommendation" value={data.recommendation.replaceAll('_', ' ')} note={data.total_events + ' total events'} icon={data.recommendation === 'VERIFY_IMMEDIATELY' ? AlertTriangle : data.recommendation === 'MONITOR' ? Activity : Check}/>
+      </div>
+      <Panel title="Source comparison" subtitle="Latest reported quantity from each data source.">
+        <div className="reconciliation-grid">{Object.entries(data.sources).map(([src, info]: [string, any]) => (
+          <article className="recon-card" key={src} style={{ borderTopColor: SOURCE_COLORS[src] || '#666' }}>
+            <span className="source-badge" style={{ background: SOURCE_COLORS[src] || '#666' }}>{src}</span>
+            <b className="recon-qty">{info.latest_reported_quantity ?? '—'}</b>
+            <small>Latest: {info.latest_event_type?.replaceAll('_', ' ') || 'None'}</small>
+            <small>{info.event_count} events</small>
+            <small>{info.latest_timestamp ? new Date(info.latest_timestamp).toLocaleString() : 'No data'}</small>
+          </article>
+        ))}</div>
+      </Panel>
+      <p className="footnote">Confidence is estimated from source agreement. A higher discrepancy spread lowers confidence. Verification is recommended when sources disagree by ≥5 units.</p>
+    </>}
+  </>
 }
 
 function AdminMap() {
