@@ -78,7 +78,7 @@ async def seed_database(session: AsyncSession) -> None:
     await session.execute(insert(Store), stores)
 
     UNSPLASH_MAP = {
-        "Pantry": "https://images.unsplash.com/photo-1584473457406-6240486418e9?w=480&h=360&fit=crop",
+        "Grocery": "https://images.unsplash.com/photo-1584473457406-6240486418e9?w=480&h=360&fit=crop",
         "Beverages": "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=480&h=360&fit=crop",
         "Personal Care": "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=480&h=360&fit=crop",
         "Household": "https://images.unsplash.com/photo-1584824486509-112e4181f1ce?w=480&h=360&fit=crop",
