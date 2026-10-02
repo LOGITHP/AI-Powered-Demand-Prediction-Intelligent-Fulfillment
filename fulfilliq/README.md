@@ -1,127 +1,132 @@
-# FulfillIQ
+# FulfillIQ: AI-Powered Inventory Reconciliation and Risk-Aware Fulfillment Platform for Multi-Store Retail Operations
 
-FulfillIQ is a runnable prototype for retail availability and fulfillment decisions. It estimates whether a requested quantity is likely to be on hand, forecasts demand, scores nearby simulated locations and recommends a store. All stores, products, customers, inventory and orders are fictional.
+FulfillIQ is a software-first, hardware-independent intelligence layer for multi-store retail operations. It consumes simulated or real operational events, reconciles conflicting inventory observations, estimates current inventory and confidence, predicts discrepancy and fulfillment risk, prioritizes verification, and recommends fulfillment or other operational actions. Its principal differentiation is treating information reliability as a first-class variable in commerce operations.
 
-## Quick start with Docker
+## 1. Executive Summary
+
+This project proposes a software-first, hardware-independent intelligence layer for a multi-store retailer. The platform does not replace the retailer's ERP, WMS, POS, OMS, e-commerce platform, RFID infrastructure, or IoT systems. Instead, it consumes data from those systems, normalizes events, reconciles conflicting inventory observations, estimates inventory confidence, predicts discrepancy and fulfillment risk, and recommends operational actions.
+
+The central product insight is not "AI can count inventory" or "AI can forecast demand." Major retail platforms already provide capabilities in real-time inventory visibility and order orchestration. The proposed differentiation is a **trust-aware decision layer** that makes uncertainty explicit and uses it in operational decisions.
+
+The prototype can operate without physical RFID readers or IoT devices. A digital-twin-style simulator generates POS, WMS, ERP, e-commerce, RFID-like, sensor, transfer, reservation, and logistics events, including realistic errors such as delays, duplicates, missing events, and conflicting quantities. The hidden simulator state acts as ground truth for evaluation.
+
+## 2. What the Project Is — and Is Not
+
+| Question | Answer |
+| --- | --- |
+| **Is this another shopping app?** | No. The customer can continue using an existing retailer app. |
+| **Is the customer the primary user?** | No. Primary users are retail operations, inventory, and supply-chain teams. |
+| **Does it replace SAP/Oracle/WMS/OMS?** | No. It is proposed as a vendor-neutral intelligence layer above existing systems. |
+| **Does it count physical inventory itself?** | Not necessarily. It consumes transactions and observations from counting/scanning/RFID systems and estimates reliability. |
+| **Does it forecast demand?** | It can, but demand forecasting is not the main innovation. |
+| **What is the core AI problem?** | Predicting discrepancy/fulfillment risk and deciding when information is trustworthy enough for action. |
+| **Does it require hardware?** | No for the prototype. Real hardware can later feed the same interfaces. |
+| **What is the central innovation?** | Trust-aware inventory and fulfillment: state + confidence + risk + action. |
+
+## 3. The Gap We Target
+
+Modern retail already has sophisticated inventory-management systems. The problem FulfillIQ targets is the decision gap created when multiple operational observations are incomplete, delayed, or inconsistent (e.g. POS, WMS, ERP, and RFID reporting different inventory quantities). 
+
+The important question is not only *'which number is correct?'* It is: *'Given the timestamps, source behavior, transaction history, reservations, damage, transfers and observations, what current state should the business trust enough to make a fulfillment decision?'*
+
+**What existing capabilities provide vs. What FulfillIQ adds:**
+- **Inventory quantity** ➔ Inventory quantity + confidence/uncertainty
+- **Order sourcing** ➔ Order sourcing + information reliability + fulfillment failure risk
+- **Stock counting** ➔ Risk-ranked verification priority
+- **Correction** ➔ Verified result becomes feedback for future risk models
+
+### Key Innovations
+1. **Inventory Confidence Layer** — Estimated state + confidence + evidence.
+2. **Discrepancy Risk Prediction** — Probability that inventory state is materially wrong.
+3. **Risk-Aware Fulfillment** — Choose fulfillment sources using inventory reliability as a decision variable.
+4. **Risk-Ranked Verification** — Prioritize physical checks by risk and business impact.
+5. **Value of Verification** — Estimate whether obtaining better information is worth its cost.
+6. **Cause-Aware Reconciliation** — Rank likely causes of discrepancies and show evidence.
+
+## 4. Quick start with Docker
 
 Requirements: Docker Desktop with Compose.
 
-1. From this directory, copy .env.example to .env. Change JWT_SECRET before sharing the environment.
+1. From this directory, copy `.env.example` to `.env`. Change `JWT_SECRET` before sharing the environment.
 2. Start the services:
-
-        docker compose up --build
-
+   ```bash
+   docker compose up --build
+   ```
 3. Open:
-   - Customer and operations UI: http://localhost:5173
-   - FastAPI Swagger: http://localhost:8000/docs
-   - Health: http://localhost:8000/health
+   - **Customer and Operations UI**: http://localhost:5173
+   - **FastAPI Swagger**: http://localhost:8000/docs
+   - **Health API**: http://localhost:8000/health
 
-On first startup the API creates its schema and seeds 508 products, 50 simulated Coimbatore locations, inventory, inventory events, 30,000 historical order examples and demo accounts. The initial seed can take a minute. PostgreSQL data is retained in the postgres_data volume. Stop with Ctrl+C; use docker compose down to stop containers.
+On first startup, the API creates its schema and seeds 508 products, 50 simulated Coimbatore locations, inventory, inventory events, 30,000 historical order examples, and demo accounts. The initial seed can take a minute. PostgreSQL data is retained in the `postgres_data` volume. Stop with `Ctrl+C`; use `docker compose down` to stop containers.
 
-## Deploy to Render
+## 5. Demo Accounts and Suggested Flow
 
-The repository-root `render.yaml` defines one web service plus a managed PostgreSQL database. The web service builds the React app into the FastAPI image, so the UI and API share one public URL and do not need a separately configured CORS origin.
+These development-only accounts are seeded automatically. You can also register a Customer, Store Manager, or Admin account directly in the UI.
+
+| Role | Email | Password | Access Level |
+| --- | --- | --- | --- |
+| Platform admin | admin@fulfilliq.local | FulfillIQ-demo-2026! | Network map, predictions, order queue, simulation tools |
+| Store manager | manager01@fulfilliq.local | FulfillIQ-demo-2026! | Store-specific stock, forecasts, recommendations, incoming orders |
+| Customer | customer@fulfilliq.local | FulfillIQ-demo-2026! | Customer storefront, browse, order creation |
+
+### Suggested Demo Scenario
+1. Create three stores and one distribution center, or use the seeded Coimbatore network.
+2. Generate normal POS, WMS, transfer, and reservation events. 
+3. Inject a synchronization delay and a missing/duplicate event using the simulation. Show that different sources disagree. 
+4. Run reconciliation and show estimated inventory + confidence. 
+5. Switch to a Customer account, search for an item, and create an online order. 
+6. Compare candidate fulfillment locations and see why the closest location is not necessarily the safest choice based on confidence and discrepancy risk.
+7. Recommend a fulfillment source based on the optimization engine.
+
+## 6. Run locally without Docker
+Python 3.11+ and Node.js 20+ are recommended. SQLite is the default for local development.
+
+**Backend:**
+```powershell
+Copy-Item .env.example backend/.env
+py -3.11 -m venv backend/venv
+.\backend\venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+Set-Location backend
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+**Frontend:**
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
+
+## 7. Deploy to Render
+The repository-root `render.yaml` defines one web service plus a managed PostgreSQL database. The web service builds the React app into the FastAPI image, sharing one public URL.
 
 1. Push this repository to a Git provider connected to Render.
-2. In the Render Dashboard, create a new Blueprint and select this repository. Render reads `render.yaml` from the repository root.
-3. Review the `fulfilliq` web service and `fulfilliq-db` database, then apply the Blueprint. Render generates `JWT_SECRET` and supplies the database connection string.
-4. When the deploy is healthy, open the web service's `onrender.com` URL. The API health endpoint is `/health` and Swagger is `/docs`.
+2. In the Render Dashboard, create a new Blueprint and select this repository. 
+3. Review the `fulfilliq` web service and `fulfilliq-db` database, then apply the Blueprint. Render generates `JWT_SECRET` and supplies the connection string.
+4. Open the web service's `onrender.com` URL when healthy. 
 
-The Blueprint selects Render's free plans for a prototype. The web service sleeps after 15 minutes without traffic, and the free Postgres database expires 30 days after creation. Trained model files use the container's temporary filesystem and can be lost on restart or redeploy; the Postgres database stores the app's operational data. Upgrade the database before the 30-day expiry if you need to retain it, and use paid compute plus persistent storage for production-style uptime or durable model artifacts.
+## 8. Technical Architecture & Data Model
+FulfillIQ simulates a software-defined digital twin environment because real hardware (RFID, POS machines) is not required for the prototype. It operates via:
+- **Simulation**: Python event generation for POS, WMS, delays, and duplicates.
+- **API Backend**: FastAPI
+- **Database**: PostgreSQL / SQLite (Async SQLAlchemy)
+- **ML / AI**: scikit-learn / XGBoost for discrepancy and fulfillment risk.
+- **Frontend Dashboard**: React / Vite / Tailwind
 
-The login screen includes shared demo credentials, including a platform-admin account. The seeded data is fictional; anyone with those credentials can change the demo records. Change the demo credentials or restrict access before sharing the URL broadly.
+The minimal data model tracks:
+- `Product`, `Location`, `Order`
+- `InventoryEvent` (source, event_type, quantity)
+- `InventoryState` (on_hand, reserved, sellable)
+- `FulfillmentCandidate` (inventory_estimate, confidence, distance, cost, risk)
 
-## Run locally without Docker
+## 9. Evidence and Sources
+FulfillIQ is informed by leading enterprise capabilities but differentiates on trust-aware decision making:
+- [SAP — Unified Commerce Solutions](https://www.sap.com/products/crm/commerce.html)
+- [Oracle — Retail Store Inventory Operations Cloud Services](https://docs.oracle.com/en/industries/retail/store-inventory-op-cloud/latest/)
+- [Blue Yonder — Inventory Availability](https://blueyonder.com/solutions/order-management-and-commerce/inventory-availability)
+- [Manhattan Associates — Store Inventory & Fulfillment](https://www.manh.com/en-in/our-solutions/omnichannel-software-solutions/store-inventory-fulfillment)
+- [NIST — Digital Twins](https://www.nist.gov/digital-twins)
 
-Python 3.11+ and Node.js 20+ are recommended. PostgreSQL is optional for local development; SQLite is the default.
-
-PowerShell:
-
-    Copy-Item .env.example backend/.env
-    py -3.11 -m venv backend/venv
-    .\backend\venv\Scripts\Activate.ps1
-    pip install -r backend/requirements.txt
-    Set-Location backend
-    alembic upgrade head
-    uvicorn app.main:app --reload
-
-In a second terminal:
-
-    Set-Location frontend
-    npm install
-    npm run dev
-
-The API creates any missing tables and seeds the demo dataset on first startup. backend/scripts/generate_data.py safely initializes an empty database and does not delete existing records. If you copied .env.example to backend/.env, its SQLite URL will create backend/fulfilliq.db.
-
-## Demo accounts
-
-These development-only accounts are seeded automatically.
-
-| Role | Email | Access |
-| --- | --- | --- |
-| Platform admin | admin@fulfilliq.local | FulfillIQ-demo-2026! |
-| Store manager | manager01@fulfilliq.local | FulfillIQ-demo-2026! |
-| Customer | customer@fulfilliq.local | FulfillIQ-demo-2026! |
-
-Public registration creates customer accounts only. Admin and store-manager permissions cannot be chosen at registration.
-
-## Demo flow
-
-1. Sign in as the customer or browse without signing in.
-2. Search Wireless Mouse. Choose a nearby recommendation to see availability confidence, estimated distance, a transparent fulfillment score, and alternative stores.
-3. Add the item to the bag and sign in as the customer to place a demo order. No real payment is collected; on-hand inventory is reduced and a sale event is recorded.
-4. Sign in as the platform admin to view the network map, predictions, order queue, analytics and simulation tools.
-5. Sign in as the store manager to review store-specific stock, forecasts, recommendations and incoming orders.
-
-The customer location starts at central Coimbatore (11.0168, 76.9558) and can be changed from the shop screen. Map distances use the Haversine straight-line estimate, not driving distance.
-
-## Model training and evaluation
-
-The model-training screen is available only to PLATFORM_ADMIN. Demand and availability use scikit-learn Random Forest baselines. Training stores versioned Joblib files and model metadata under MODEL_STORAGE_PATH; holdout MAE/RMSE/R² or accuracy/precision/recall/F1/ROC-AUC are computed from generated order records. Train and activate are separate actions. Until a trained model is activated, the API uses a transparent seasonal demand baseline and an inventory reliability availability baseline.
-
-These results describe simulated data and are not production performance claims. Demand examples represent generated order records rather than a real point-of-sale feed. Business strategy comparison is a prototype simulation; the API response includes its sample size and methodology note.
-
-The simulation screen can advance one simulated hour, add examples until the dataset reaches 100,000 records, or complete a store transfer. The initial reproducible seed is 42. Increasing generated data can take time.
-
-## Environment variables
-
-See .env.example.
-
-| Variable | Purpose |
-| --- | --- |
-| DATABASE_URL | Async SQLAlchemy URL; SQLite locally or PostgreSQL in Compose |
-| JWT_SECRET | Signing secret for bearer tokens |
-| CORS_ORIGINS | Comma-separated allowed browser origins |
-| MODEL_STORAGE_PATH | Directory for saved Joblib model versions |
-| SEED | Reproducible seed-data and simulation seed |
-| HISTORICAL_ORDER_COUNT | First-start generated history count (prototype default: 30,000) |
-| POSTGRES_PASSWORD | Local Compose-only PostgreSQL password |
-
-The included .env.example values are for local demonstration. Use a private secret and database credentials for any shared deployment; never commit a real .env.
-
-## Migrations and project map
-
-Run migrations from backend/ after activating the environment:
-
-    alembic upgrade head
-
-The migration is also safe against a fresh database because schema creation is idempotent. FastAPI creates missing tables on startup as a local-development convenience.
-
-    fulfilliq/
-    ├── backend/app/        FastAPI, SQLAlchemy models, services, seed and Alembic migration
-    ├── backend/scripts/    Safe seed-data initialization command
-    ├── frontend/src/       React, TypeScript, customer/store/admin UI
-    ├── database/           Database notes
-    ├── docs/                Architecture overview
-    ├── ml/                  Training notes; integrated trainers use backend/app
-    ├── docker-compose.yml
-    └── .env.example
-
-The Render Blueprint is at the repository root, alongside the `fulfilliq/` directory.
-
-## Notes
-
-- Store names and locations are fictional examples distributed around Coimbatore, Tamil Nadu.
-- Placeholder product art is not a product photograph.
-- Fulfillment component weights are initial prototype defaults, not an optimized policy.
-- Demo order states progress through the simulation clock and are not connected to a delivery partner.
+*Note: The platform is a "digital-twin-style" simulation prototype and does not represent a certified industrial digital twin or replace core ERP/OMS/WMS systems.*
