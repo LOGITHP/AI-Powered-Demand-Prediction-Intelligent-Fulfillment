@@ -83,7 +83,9 @@ class InventoryEvent(Base):
     store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), index=True, nullable=False)
     event_type = Column(String(40), nullable=False)
+    source = Column(String(20), default="POS", nullable=False)
     quantity_delta = Column(Integer, nullable=False)
+    reported_quantity = Column(Integer, nullable=True)
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
 

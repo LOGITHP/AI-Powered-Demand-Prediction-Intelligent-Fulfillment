@@ -190,14 +190,108 @@ async def seed_database(session: AsyncSession) -> None:
     await session.execute(insert(HistoricalOrder), hist)
 
     event_rows = []
-    for _ in range(1600):
-        inventory = rng.choice(inventory_rows)
-        delta = rng.choice([-4, -2, -1, 1, 3, 6, 10])
-        event_rows.append({
-            "store_id": inventory["store_id"], "product_id": inventory["product_id"],
-            "event_type": "sale" if delta < 0 else "replenishment", "quantity_delta": delta,
-            "note": "Generated historical inventory event", "created_at": now - timedelta(days=rng.randint(0, 90)),
-        })
+    SOURCES = ["POS", "WMS", "ERP", "RFID"]
+    EVENT_TYPES = {
+        "POS":  ["sale", "return", "void"],
+        "WMS":  ["replenishment", "pick", "putaway", "cycle_count", "damage"],
+        "ERP":  ["purchase_receipt", "adjustment", "write_off", "transfer_in", "transfer_out"],
+        "RFID": ["scan_observation", "zone_count", "tag_read"],
+    }
+
+    for inventory in inventory_rows:
+        sid = inventory["store_id"]
+        pid = inventory["product_id"]
+        base_qty = inventory["reported_quantity"]
+
+        # --- POS events: customer sales, occasional returns ---
+        num_pos = rng.randint(2, 8)
+        for _ in range(num_pos):
+            etype = rng.choices(["sale", "return", "void"], weights=[85, 10, 5])[0]
+            delta = -rng.randint(1, 3) if etype == "sale" else rng.randint(1, 2)
+            ts = now - timedelta(days=rng.randint(0, 60), hours=rng.randint(0, 23), minutes=rng.randint(0, 59))
+            event_rows.append({
+                "store_id": sid, "product_id": pid,
+                "event_type": etype, "source": "POS", "quantity_delta": delta,
+                "reported_quantity": max(0, base_qty + delta),
+                "note": f"POS terminal #{rng.randint(1, 6)} — store {sid}",
+                "created_at": ts,
+            })
+
+        # --- WMS events: warehouse picks, putaway, replenishment, damage ---
+        num_wms = rng.randint(1, 5)
+        for _ in range(num_wms):
+            etype = rng.choices(["replenishment", "pick", "putaway", "cycle_count", "damage"], weights=[35, 25, 20, 12, 8])[0]
+            if etype in ("replenishment", "putaway"):
+                delta = rng.randint(3, 15)
+            elif etype == "cycle_count":
+                delta = 0
+            else:
+                delta = -rng.randint(1, 4)
+            # WMS sometimes reports a different quantity than POS (the core reconciliation problem)
+            wms_reported = max(0, base_qty + rng.randint(-3, 3))
+            ts = now - timedelta(days=rng.randint(0, 60), hours=rng.randint(0, 23))
+            # Inject sync delay: WMS events sometimes lag behind POS by 1-4 hours
+            ts = ts + timedelta(hours=rng.randint(0, 4))
+            event_rows.append({
+                "store_id": sid, "product_id": pid,
+                "event_type": etype, "source": "WMS", "quantity_delta": delta,
+                "reported_quantity": wms_reported,
+                "note": f"WMS rack {rng.choice('ABCDEF')}-{rng.randint(1, 30):02d} — store {sid}",
+                "created_at": ts,
+            })
+
+        # --- ERP events: purchase receipts, adjustments, write-offs, transfers ---
+        num_erp = rng.randint(1, 3)
+        for _ in range(num_erp):
+            etype = rng.choices(["purchase_receipt", "adjustment", "write_off", "transfer_in", "transfer_out"], weights=[40, 25, 10, 15, 10])[0]
+            if etype in ("purchase_receipt", "transfer_in"):
+                delta = rng.randint(5, 25)
+            elif etype == "adjustment":
+                delta = rng.randint(-5, 5)
+            else:
+                delta = -rng.randint(1, 8)
+            # ERP can have stale data — its reported quantity may differ from POS & WMS
+            erp_reported = max(0, base_qty + rng.randint(-4, 4))
+            ts = now - timedelta(days=rng.randint(0, 90), hours=rng.randint(0, 23))
+            event_rows.append({
+                "store_id": sid, "product_id": pid,
+                "event_type": etype, "source": "ERP", "quantity_delta": delta,
+                "reported_quantity": erp_reported,
+                "note": f"ERP batch {rng.randint(10000, 99999)} — store {sid}",
+                "created_at": ts,
+            })
+
+        # --- RFID events: tag reads, zone scans, observations ---
+        num_rfid = rng.randint(1, 4)
+        for _ in range(num_rfid):
+            etype = rng.choices(["scan_observation", "zone_count", "tag_read"], weights=[45, 30, 25])[0]
+            # RFID observation: no delta, just a physical count observation
+            rfid_observed = max(0, base_qty + rng.randint(-5, 2))  # RFID often reads lower (missed tags)
+            ts = now - timedelta(days=rng.randint(0, 30), hours=rng.randint(0, 23))
+            event_rows.append({
+                "store_id": sid, "product_id": pid,
+                "event_type": etype, "source": "RFID", "quantity_delta": 0,
+                "reported_quantity": rfid_observed,
+                "note": f"RFID reader zone-{rng.choice('ABCDEFGH')}{rng.randint(1, 4)} — store {sid}",
+                "created_at": ts,
+            })
+
+        # --- Inject realistic errors for ~15% of inventory items ---
+        if rng.random() < 0.15:
+            # Duplicate event (same event sent twice by POS)
+            dup = event_rows[-rng.randint(1, min(3, len(event_rows)))]
+            event_rows.append({**dup, "note": f"DUPLICATE — {dup.get('note', '')}"})
+
+        if rng.random() < 0.10:
+            # Missing event gap: WMS shows replenishment but POS never recorded the stock arriving
+            event_rows.append({
+                "store_id": sid, "product_id": pid,
+                "event_type": "replenishment", "source": "WMS", "quantity_delta": rng.randint(5, 15),
+                "reported_quantity": base_qty + rng.randint(5, 15),
+                "note": f"MISSING_POS_RECEIPT — WMS recorded but POS did not reflect — store {sid}",
+                "created_at": now - timedelta(days=rng.randint(1, 30)),
+            })
+
     await session.execute(insert(InventoryEvent), event_rows)
 
     session.add(Recommendation(

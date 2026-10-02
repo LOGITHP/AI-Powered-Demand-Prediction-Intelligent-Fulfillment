@@ -482,7 +482,7 @@ async def patch_inventory(
     delta = payload.reported_quantity - inv.reported_quantity
     inv.reported_quantity = payload.reported_quantity
     inv.last_updated = datetime.utcnow()
-    db.add(InventoryEvent(store_id=inv.store_id, product_id=inv.product_id, event_type="inventory_correction", quantity_delta=delta, note=payload.note))
+    db.add(InventoryEvent(store_id=inv.store_id, product_id=inv.product_id, event_type="inventory_correction", source="ERP", quantity_delta=delta, note=payload.note))
     await db.commit()
     return {"ok": True, "reported_quantity": inv.reported_quantity}
 
@@ -587,7 +587,7 @@ async def create_order(payload: OrderInput, user: User = Depends(require_roles(R
     for inv, quantity in inventory_rows:
         inv.reported_quantity -= quantity
         inv.last_updated = datetime.utcnow()
-        db.add(InventoryEvent(store_id=store.id, product_id=inv.product_id, event_type="sale", quantity_delta=-quantity, note=f"Order #{order.id}"))
+        db.add(InventoryEvent(store_id=store.id, product_id=inv.product_id, event_type="sale", source="POS", quantity_delta=-quantity, note=f"Order #{order.id}"))
     await db.commit()
     order = await db.scalar(select(Order).options(selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.store)).where(Order.id == order.id))
     return order_payload(order)
@@ -708,7 +708,7 @@ async def complete_recommendation(recommendation_id: int, user: User = Depends(r
     inv.reported_quantity += rec.recommended_quantity
     inv.last_updated = datetime.utcnow()
     rec.status = "COMPLETED"
-    db.add(InventoryEvent(store_id=rec.store_id, product_id=rec.product_id, event_type="replenishment", quantity_delta=rec.recommended_quantity, note=f"FulfillIQ recommendation #{rec.id} completed"))
+    db.add(InventoryEvent(store_id=rec.store_id, product_id=rec.product_id, event_type="replenishment", source="WMS", quantity_delta=rec.recommended_quantity, note=f"FulfillIQ recommendation #{rec.id} completed"))
     await db.commit()
     return {"ok": True, "status": rec.status, "reported_quantity": inv.reported_quantity}
 
@@ -918,6 +918,90 @@ async def public_stores(db: AsyncSession = Depends(get_db)):
     return [store_payload(s) for s in (await db.scalars(select(Store).where(Store.is_active.is_(True)).order_by(Store.id))).all()]
 
 
+@app.get("/admin/events")
+async def admin_events(
+    store_id: int | None = None, product_id: int | None = None, source: str | None = None,
+    limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0),
+    user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN, RoleEnum.STORE_MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Multi-source inventory event ledger — POS, WMS, ERP, RFID."""
+    query = select(InventoryEvent)
+    if store_id:
+        query = query.where(InventoryEvent.store_id == store_id)
+    if product_id:
+        query = query.where(InventoryEvent.product_id == product_id)
+    if source:
+        query = query.where(InventoryEvent.source == source.upper())
+    events = (await db.scalars(query.order_by(InventoryEvent.created_at.desc()).offset(offset).limit(limit))).all()
+    return [{
+        "id": e.id, "store_id": e.store_id, "product_id": e.product_id,
+        "event_type": e.event_type, "source": e.source, "quantity_delta": e.quantity_delta,
+        "reported_quantity": e.reported_quantity, "note": e.note,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+    } for e in events]
+
+
+@app.get("/admin/reconciliation/{store_id}/{product_id}")
+async def reconciliation_view(
+    store_id: int, product_id: int,
+    user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN, RoleEnum.STORE_MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-SKU reconciliation: compare reported quantities across POS, WMS, ERP, RFID sources."""
+    events = (await db.scalars(
+        select(InventoryEvent)
+        .where(InventoryEvent.store_id == store_id, InventoryEvent.product_id == product_id)
+        .order_by(InventoryEvent.created_at.desc())
+    )).all()
+    inv = await db.scalar(
+        select(Inventory).where(Inventory.store_id == store_id, Inventory.product_id == product_id)
+    )
+    source_summary: dict[str, Any] = {}
+    for src in ("POS", "WMS", "ERP", "RFID"):
+        src_events = [e for e in events if e.source == src]
+        latest = src_events[0] if src_events else None
+        source_summary[src] = {
+            "event_count": len(src_events),
+            "latest_reported_quantity": latest.reported_quantity if latest and latest.reported_quantity is not None else None,
+            "latest_event_type": latest.event_type if latest else None,
+            "latest_timestamp": latest.created_at.isoformat() if latest and latest.created_at else None,
+        }
+    reported_values = [v["latest_reported_quantity"] for v in source_summary.values() if v["latest_reported_quantity"] is not None]
+    discrepancy = (max(reported_values) - min(reported_values)) if len(reported_values) >= 2 else 0
+    confidence = round(max(0.0, min(1.0, 1.0 - discrepancy * 0.08)), 2) if reported_values else 0.0
+    return {
+        "store_id": store_id, "product_id": product_id,
+        "current_reported_quantity": inv.reported_quantity if inv else None,
+        "inventory_accuracy": inv.inventory_accuracy if inv else None,
+        "sources": source_summary,
+        "discrepancy_spread": discrepancy,
+        "estimated_confidence": confidence,
+        "total_events": len(events),
+        "recommendation": "VERIFY_IMMEDIATELY" if discrepancy >= 5 else ("MONITOR" if discrepancy >= 2 else "TRUSTED"),
+    }
+
+
+@app.get("/admin/source-summary")
+async def source_summary(
+    user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Network-wide event source distribution summary."""
+    result = await db.execute(
+        select(InventoryEvent.source, InventoryEvent.event_type, func.count(InventoryEvent.id))
+        .group_by(InventoryEvent.source, InventoryEvent.event_type)
+        .order_by(InventoryEvent.source)
+    )
+    rows = result.all()
+    summary: dict[str, Any] = {}
+    for source_name, event_type, count in rows:
+        if source_name not in summary:
+            summary[source_name] = {"total": 0, "event_types": {}}
+        summary[source_name]["total"] += count
+        summary[source_name]["event_types"][event_type] = count
+    return summary
+
 
 @app.get("/admin/stores")
 async def admin_stores(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)), db: AsyncSession = Depends(get_db)):
@@ -981,7 +1065,7 @@ async def simulation_step(user: User = Depends(require_roles(RoleEnum.PLATFORM_A
         delta = min(inv.reported_quantity, rng.randint(0, 2))
         inv.reported_quantity -= delta
         inv.last_updated = datetime.utcnow()
-        db.add(InventoryEvent(store_id=inv.store_id, product_id=inv.product_id, event_type="sale", quantity_delta=-delta, note="One-hour simulation step"))
+        db.add(InventoryEvent(store_id=inv.store_id, product_id=inv.product_id, event_type="sale", source="POS", quantity_delta=-delta, note="One-hour simulation step"))
         changes.append({"store_id": inv.store_id, "product_id": inv.product_id, "units_sold": delta, "stock_after": inv.reported_quantity})
     transitions = []
     for current, following in (("CONFIRMED", "PREPARING"), ("PREPARING", "OUT_FOR_DELIVERY"), ("OUT_FOR_DELIVERY", "DELIVERED")):
@@ -1010,8 +1094,8 @@ async def transfer_stock(payload: TransferInput, user: User = Depends(require_ro
     transfer = StoreTransfer(from_store_id=payload.from_store_id, to_store_id=payload.to_store_id, product_id=payload.product_id, quantity=payload.quantity, status="COMPLETED")
     db.add(transfer)
     db.add_all([
-        InventoryEvent(store_id=payload.from_store_id, product_id=payload.product_id, event_type="transfer", quantity_delta=-payload.quantity, note=f"Transfer to Store {payload.to_store_id:03d}"),
-        InventoryEvent(store_id=payload.to_store_id, product_id=payload.product_id, event_type="transfer", quantity_delta=payload.quantity, note=f"Transfer from Store {payload.from_store_id:03d}"),
+        InventoryEvent(store_id=payload.from_store_id, product_id=payload.product_id, event_type="transfer", source="ERP", quantity_delta=-payload.quantity, note=f"Transfer to Store {payload.to_store_id:03d}"),
+        InventoryEvent(store_id=payload.to_store_id, product_id=payload.product_id, event_type="transfer", source="ERP", quantity_delta=payload.quantity, note=f"Transfer from Store {payload.from_store_id:03d}"),
     ])
     await db.commit()
     return {"transfer_id": transfer.id, "before": before, "transferred": payload.quantity, "after": target.reported_quantity}
