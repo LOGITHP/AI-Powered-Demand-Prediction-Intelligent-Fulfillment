@@ -6,11 +6,12 @@ from app.models.all_models import RoleEnum, StoreTypeEnum
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: Optional[dict] = None
 
 class UserCreate(BaseModel):
     email: str
     password: str
-    role: RoleEnum
+    role: RoleEnum = RoleEnum.CUSTOMER
     store_id: Optional[int] = None
 
 class UserResponse(BaseModel):
