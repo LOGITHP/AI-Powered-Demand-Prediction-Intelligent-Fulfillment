@@ -934,7 +934,7 @@ async def admin_products(user: User = Depends(require_roles(RoleEnum.PLATFORM_AD
 
 @app.post("/admin/products", status_code=201)
 async def create_product(payload: ProductCreate, user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)), db: AsyncSession = Depends(get_db)):
-    product = Product(**payload.model_dump(), image_url="https://placehold.co/480x360/f4f3ef/334155?text=FulfillIQ", is_active=True)
+    product = Product(**payload.model_dump(), image_url="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=480&h=360&fit=crop", is_active=True)
     db.add(product)
     await db.commit()
     await db.refresh(product)
