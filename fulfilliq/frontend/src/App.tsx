@@ -126,7 +126,7 @@ function Shop() {
   })
   const data = productsQuery.data?.pages[0]
   const products = productsQuery.data?.pages.flatMap((page) => page.items) ?? []
-  const { setCart } = useSession()
+  const { cart, setCart } = useSession()
   const groups = ['All', 'Grocery', 'Beverages', 'Personal Care', 'Household', 'Electronics', 'Stationery', 'Snacks', 'Fruits', 'Vegetables', 'Baby Care', 'Pet Care', 'Kitchen', 'Health & Wellness']
   const choose = async (product: Product) => {
     setSelected(product); setMatch(null); setProblem(''); setBusy(true)
