@@ -209,3 +209,8 @@ class SimulationState(Base):
     simulated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     seed = Column(Integer, default=42, nullable=False)
     is_running = Column(Boolean, default=False, nullable=False)
+    fulfillment_weights = Column(
+        Text,
+        default='{"availability":40,"inventory":20,"distance":20,"future_availability":10,"delivery_sla":10}',
+        nullable=False,
+    )

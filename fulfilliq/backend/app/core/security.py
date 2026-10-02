@@ -4,7 +4,13 @@ from jose import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# PBKDF2 avoids bcrypt backend/version coupling and works across Windows and
+# Linux deployments. Existing development bcrypt hashes remain verifiable.
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    pbkdf2_sha256__default_rounds=310_000,
+    deprecated="auto",
+)
 
 def create_access_token(subject: Union[str, Any], role: str, store_id: int = None, expires_delta: timedelta = None) -> str:
     if expires_delta:
@@ -16,6 +22,12 @@ def create_access_token(subject: Union[str, Any], role: str, store_id: int = Non
     return encoded_jwt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            import bcrypt
+            return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+        except (ImportError, ValueError):
+            return False
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:

@@ -45,6 +45,23 @@ BRANDS = ["Everyday Co.", "Field & Form", "Brightwell", "Northstar", "Goodroot",
 async def seed_database(session: AsyncSession) -> None:
     existing = await session.scalar(select(func.count(Store.id)))
     if existing:
+        manager_store = await session.scalar(select(Store.id).order_by(Store.id).limit(1))
+        demo_users = [
+            ("admin@fulfilliq.local", "FulfillIQ-demo-2026!", RoleEnum.PLATFORM_ADMIN, None),
+            ("manager01@fulfilliq.local", "FulfillIQ-demo-2026!", RoleEnum.STORE_MANAGER, manager_store),
+            ("customer@fulfilliq.local", "FulfillIQ-demo-2026!", RoleEnum.CUSTOMER, None),
+        ]
+        for email, password, role, store_id in demo_users:
+            demo_user = await session.scalar(select(User).where(User.email == email))
+            if demo_user:
+                demo_user.hashed_password = get_password_hash(password)
+                demo_user.role = role
+                demo_user.store_id = store_id
+            else:
+                session.add(User(email=email, hashed_password=get_password_hash(password), role=role, store_id=store_id))
+        if not await session.get(SimulationState, 1):
+            session.add(SimulationState(id=1, simulated_at=datetime.utcnow(), seed=settings.SEED, is_running=False))
+        await session.commit()
         return
 
     rng = random.Random(settings.SEED)
