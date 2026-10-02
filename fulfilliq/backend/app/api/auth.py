@@ -9,7 +9,7 @@ from app.schemas.all_schemas import Token, UserCreate, UserResponse
 
 router = APIRouter()
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=Token)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Check existing user
     result = await db.execute(select(User).where(User.email == user_in.email))
@@ -26,7 +26,15 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
-    return new_user
+    
+    access_token = create_access_token(
+        subject=new_user.email, role=new_user.role, store_id=new_user.store_id
+    )
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "user": {"id": new_user.id, "email": new_user.email, "role": new_user.role, "store_id": new_user.store_id}
+    }
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
@@ -43,4 +51,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     access_token = create_access_token(
         subject=user.email, role=user.role, store_id=user.store_id
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "user": {"id": user.id, "email": user.email, "role": user.role, "store_id": user.store_id}
+    }
