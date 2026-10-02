@@ -49,7 +49,7 @@ function Guard({ role }: { role: User['role'] }) {
   return <main className="guard"><CircleHelp size={32} /><h1>That workspace is role protected</h1><p>Your account does not have access to this area.</p><Link className="button primary" to={roleHome(user.role)}>Go to my workspace</Link></main>
 }
 
-const schema = z.object({ email: z.string().email(), password: z.string().min(1) })
+const schema = z.object({ email: z.string().email(), password: z.string().min(1), role: z.enum(['CUSTOMER', 'STORE_MANAGER', 'PLATFORM_ADMIN']).optional(), store_id: z.string().optional() })
 function Login() {
   const { user, setUser } = useSession()
   const navigate = useNavigate()
@@ -57,13 +57,16 @@ function Login() {
   const [registering, setRegistering] = useState(false)
   const [problem, setProblem] = useState('')
   const [busy, setBusy] = useState(false)
-  const { register, handleSubmit, formState: { errors } } = useForm<{ email: string; password: string }>({ resolver: zodResolver(schema) })
+  const { register, watch, handleSubmit, formState: { errors } } = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { role: 'CUSTOMER' } })
+  const selectedRole = watch('role')
+  const { data: stores = [] } = useApi<Store[]>(['public-stores'], '/stores', registering && selectedRole === 'STORE_MANAGER')
+
   if (user) return <Navigate to={roleHome(user.role)} />
-  const submit = handleSubmit(async ({ email, password }) => {
+  const submit = handleSubmit(async ({ email, password, role, store_id }) => {
     setBusy(true); setProblem('')
     try {
       const result = registering
-        ? await api.post('/auth/register', { email, password })
+        ? await api.post('/auth/register', { email, password, role, store_id: store_id ? Number(store_id) : undefined })
         : await api.post('/auth/login', new URLSearchParams({ username: email, password }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
       localStorage.setItem('fulfilliq_token', result.data.access_token)
       setUser(result.data.user)
@@ -72,9 +75,29 @@ function Login() {
   })
   return <div className="auth-page"><Link to="/" className="wordmark"><span className="brand-mark">F</span>Fulfill<span>IQ</span></Link><div className="auth-card">
     <div className="eyebrow">COIMBATORE · SIMULATED NETWORK</div><h1>{registering ? 'Create an account' : 'Welcome back'}</h1><p className="muted">Know what is in stock and where it can get to you.</p>
-    <form className="form-stack" onSubmit={submit}><label>Email address<input placeholder="you@example.com" {...register('email')} />{errors.email && <small className="field-error">Enter a valid email.</small>}</label><label>Password<input type="password" placeholder="Password" {...register('password')} />{errors.password && <small className="field-error">Enter your password.</small>}</label>
-      {problem && <div className="alert error">{problem}</div>}<button className="button primary full" disabled={busy}>{busy ? 'Please wait…' : registering ? 'Create customer account' : 'Sign in'} <ArrowRight size={16} /></button></form>
-    <button className="text-button" onClick={() => setRegistering(!registering)}>{registering ? 'Already registered? Sign in' : 'Create a customer account'}</button>
+    <form className="form-stack" onSubmit={submit}>
+      <label>Email address<input placeholder="you@example.com" {...register('email')} />{errors.email && <small className="field-error">Enter a valid email.</small>}</label>
+      <label>Password<input type="password" placeholder="Password" {...register('password')} />{errors.password && <small className="field-error">Enter your password.</small>}</label>
+      {registering && (
+        <label>Account Type
+          <select {...register('role')}>
+            <option value="CUSTOMER">Customer</option>
+            <option value="STORE_MANAGER">Store Manager</option>
+            <option value="PLATFORM_ADMIN">Platform Admin</option>
+          </select>
+        </label>
+      )}
+      {registering && selectedRole === 'STORE_MANAGER' && (
+        <label>Assign to Store
+          <select {...register('store_id')}>
+            <option value="">Select a store...</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.area})</option>)}
+          </select>
+        </label>
+      )}
+      {problem && <div className="alert error">{problem}</div>}<button className="button primary full" disabled={busy}>{busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></button>
+    </form>
+    <button className="text-button" onClick={() => setRegistering(!registering)}>{registering ? 'Already registered? Sign in' : 'Create an account'}</button>
     <div className="demo-accounts"><b>Development demo accounts</b><span>Admin · admin@fulfilliq.local</span><span>Manager · manager01@fulfilliq.local</span><span>Customer · customer@fulfilliq.local</span><code>Password: FulfillIQ-demo-2026!</code></div>
   </div><p className="auth-foot">All locations and orders are simulated. No real payment is collected.</p></div>
 }

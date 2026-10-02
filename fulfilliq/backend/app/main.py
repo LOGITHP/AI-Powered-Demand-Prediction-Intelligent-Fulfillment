@@ -63,6 +63,8 @@ app.add_middleware(
 class RegisterInput(BaseModel):
     email: str
     password: str = Field(min_length=10)
+    role: RoleEnum = RoleEnum.CUSTOMER
+    store_id: int | None = None
 
 
 class RecommendationInput(BaseModel):
@@ -359,7 +361,7 @@ async def register(payload: RegisterInput, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=422, detail="Enter a valid email address.")
     if await db.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    user = User(email=email, hashed_password=get_password_hash(payload.password), role=RoleEnum.CUSTOMER)
+    user = User(email=email, hashed_password=get_password_hash(payload.password), role=payload.role, store_id=payload.store_id)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -910,6 +912,11 @@ async def model_metrics(model_id: int, user: User = Depends(require_roles(RoleEn
         raise HTTPException(status_code=404, detail="Model version not found.")
     return {"id": model.id, "version_name": model.version_name, "model_type": model.model_type,
             "metrics": json.loads(model.metrics or "{}"), "dataset_size": model.dataset_size}
+
+@app.get("/stores")
+async def public_stores(db: AsyncSession = Depends(get_db)):
+    return [store_payload(s) for s in (await db.scalars(select(Store).where(Store.is_active.is_(True)).order_by(Store.id))).all()]
+
 
 
 @app.get("/admin/stores")
