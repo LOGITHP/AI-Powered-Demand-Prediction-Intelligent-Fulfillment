@@ -12,8 +12,8 @@ import { api, errorMessage, Product, Store, User, roleHome } from './api'
 
 type Candidate = Store & { fulfillment_score: number; availability_confidence: number; confidence_percentage: number; predicted_demand: number; expected_delivery: string; reasons: string[]; inventory: { reported_quantity: number; available_quantity: number }; score_components: Record<string, number> }
 type Match = { product: Product; recommended_store: Candidate; alternatives: Candidate[] }
-type Cart = { product: Product; quantity: number; store: Candidate; customer_lat: number; customer_lng: number }
-type ContextValue = { user: User | null; setUser: (v: User | null) => void; logout: () => void; cart: Cart | null; setCart: (v: Cart | null) => void }
+type CartItem = { product: Product; quantity: number; store: Candidate; customer_lat: number; customer_lng: number }
+type ContextValue = { user: User | null; setUser: (v: User | null) => void; logout: () => void; cart: CartItem[]; setCart: (v: CartItem[]) => void }
 const Context = createContext<ContextValue>(null as unknown as ContextValue)
 const useSession = () => useContext(Context)
 const cash = (v: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v)
@@ -24,13 +24,13 @@ function useApi<T>(key: unknown[], url: string, enabled = true) {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
-  const [cart, setCart] = useState<Cart | null>(null)
+  const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(Boolean(localStorage.getItem('fulfilliq_token')))
   useEffect(() => {
     if (!localStorage.getItem('fulfilliq_token')) return
     api.get('/auth/me').then((r) => setUser(r.data)).catch(() => localStorage.removeItem('fulfilliq_token')).finally(() => setLoading(false))
   }, [])
-  const logout = () => { localStorage.removeItem('fulfilliq_token'); setUser(null); setCart(null) }
+  const logout = () => { localStorage.removeItem('fulfilliq_token'); setUser(null); setCart([]) }
   if (loading) return <div className="loading-page"><span className="brand-mark">F</span><span className="spinner" />Opening your workspace</div>
   return <Context.Provider value={{ user, setUser, logout, cart, setCart }}><Routes>
     <Route path="/login" element={<Login />} />
@@ -105,7 +105,7 @@ function Login() {
 function CustomerLayout() {
   const { user, logout, cart } = useSession()
   return <div className="customer-app"><header className="customer-header"><Link className="wordmark" to="/"><span className="brand-mark">F</span>Fulfill<span>IQ</span></Link><div className="delivery-place"><MapPin size={17} /><span><small>Delivering around</small><b>Coimbatore, Tamil Nadu</b></span><ChevronRight size={15} /></div>
-    <nav><Link to="/">Shop</Link>{user && <Link to="/orders">Orders</Link>}<Link to="/cart" className="bag-link"><ShoppingBag size={16} /> Bag{cart && <i>{cart.quantity}</i>}</Link>{user ? <button className="account" onClick={logout}><UserRound size={15} />{user.email.split('@')[0]}<LogOut size={14} /></button> : <Link className="button dark small" to="/login">Sign in</Link>}</nav></header>
+    <nav><Link to="/">Shop</Link>{user && <Link to="/orders">Orders</Link>}<Link to="/cart" className="bag-link"><ShoppingBag size={16} /> Bag{cart.length > 0 && <i>{cart.reduce((a, b) => a + b.quantity, 0)}</i>}</Link>{user ? <button className="account" onClick={logout}><UserRound size={15} />{user.email.split('@')[0]}<LogOut size={14} /></button> : <Link className="button dark small" to="/login">Sign in</Link>}</nav></header>
     <main className="customer-main"><Routes><Route index element={<Shop />} /><Route path="cart" element={<CartPage />} /><Route path="orders" element={<CustomerOrders />} /></Routes></main>
     <footer className="customer-footer"><span>FulfillIQ · fictional Coimbatore network</span><span>Availability confidence is a simulated estimate</span><Link to="/login">Team sign in</Link></footer></div>
 }
@@ -141,8 +141,8 @@ function Shop() {
     {productsQuery.hasNextPage && <div className="load-more"><span>Showing {products.length} of {data?.total ?? 0} products</span><button className="button secondary" disabled={productsQuery.isFetchingNextPage} onClick={() => productsQuery.fetchNextPage()}>{productsQuery.isFetchingNextPage ? 'Loading more…' : 'Show more products'} <ArrowRight size={15}/></button></div>}
     <p className="disclaimer"><Sparkles size={15} /> Availability confidence combines reported stock, inventory reliability and near-term demand. Straight-line distance is an estimate.</p>
     {selected && <div className="modal-shade" onClick={() => setSelected(null)}><section className="match-modal" onClick={(e) => e.stopPropagation()}><button className="close" onClick={() => setSelected(null)}>×</button><div className="modal-product"><img src={selected.image_url} alt=""/><div><div className="eyebrow">STORE MATCH</div><h2>{selected.name}</h2><b>{cash(selected.price)}</b></div></div><hr/><div className="eyebrow">BEST AVAILABLE MATCH</div>
-      {busy ? <Loading /> : match ? <><div className="best-store"><div><small>RECOMMENDED STORE</small><h3>{match.recommended_store.name}</h3><p>{match.recommended_store.area} · {match.recommended_store.distance_km} km estimated</p></div><strong>{match.recommended_store.confidence_percentage}%<small>CONFIDENCE</small></strong></div><div className="match-stats"><div><small>Fulfillment score</small><b>{match.recommended_store.fulfillment_score}<i>/100</i></b></div><div><small>Available units</small><b>{match.recommended_store.inventory.available_quantity}</b></div><div><small>Expected delivery</small><b>{match.recommended_store.expected_delivery}</b></div></div><ul className="reason-list">{match.recommended_store.reasons.map((r) => <li key={r}><Check size={14}/>{r}</li>)}</ul><button className="button primary full" onClick={() => { setCart({ product: selected, quantity: 1, store: match.recommended_store, customer_lat: location.lat, customer_lng: location.lng }); setSelected(null) }}>Add to bag · {cash(selected.price)}</button>
-        {match.alternatives.length > 0 && <div className="alternatives"><b>Other nearby options</b>{match.alternatives.slice(0, 3).map((s) => <button key={s.id} onClick={() => { setCart({ product: selected, quantity: 1, store: s, customer_lat: location.lat, customer_lng: location.lng }); setSelected(null) }}><span>{s.name}<small>{s.area} · {s.distance_km} km</small></span><b>{s.confidence_percentage}% confidence</b></button>)}</div>}</> : <div className="alert error">{problem}</div>}
+      {busy ? <Loading /> : match ? <><div className="best-store"><div><small>RECOMMENDED STORE</small><h3>{match.recommended_store.name}</h3><p>{match.recommended_store.area} · {match.recommended_store.distance_km} km estimated</p></div><strong>{match.recommended_store.confidence_percentage}%<small>CONFIDENCE</small></strong></div><div className="match-stats"><div><small>Fulfillment score</small><b>{match.recommended_store.fulfillment_score}<i>/100</i></b></div><div><small>Available units</small><b>{match.recommended_store.inventory.available_quantity}</b></div><div><small>Expected delivery</small><b>{match.recommended_store.expected_delivery}</b></div></div><ul className="reason-list">{match.recommended_store.reasons.map((r) => <li key={r}><Check size={14}/>{r}</li>)}</ul><button className="button primary full" onClick={() => { const existing = cart.find(c => c.product.id === selected.id && c.store.id === match.recommended_store.id); if (existing) { setCart(cart.map(c => c === existing ? { ...c, quantity: c.quantity + 1 } : c)) } else { setCart([...cart, { product: selected, quantity: 1, store: match.recommended_store, customer_lat: location.lat, customer_lng: location.lng }]) }; setSelected(null) }}>Add to bag · {cash(selected.price)}</button>
+        {match.alternatives.length > 0 && <div className="alternatives"><b>Other nearby options</b>{match.alternatives.slice(0, 3).map((s) => <button key={s.id} onClick={() => { const existing = cart.find(c => c.product.id === selected.id && c.store.id === s.id); if (existing) { setCart(cart.map(c => c === existing ? { ...c, quantity: c.quantity + 1 } : c)) } else { setCart([...cart, { product: selected, quantity: 1, store: s, customer_lat: location.lat, customer_lng: location.lng }]) }; setSelected(null) }}><span>{s.name}<small>{s.area} · {s.distance_km} km</small></span><b>{s.confidence_percentage}% confidence</b></button>)}</div>}</> : <div className="alert error">{problem}</div>}
     </section></div>}
   </>
 }
@@ -153,15 +153,29 @@ function CartPage() {
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
   const place = async () => {
-    if (!cart) return
+    if (cart.length === 0) return
     if (!user) { navigate('/login', { state: { from: '/cart' } }); return }
     setBusy(true); setProblem('')
-    try { await api.post('/orders', { store_id: cart.store.id, customer_lat: cart.customer_lat, customer_lng: cart.customer_lng, items: [{ product_id: cart.product.id, quantity: cart.quantity }] }); setCart(null); navigate('/orders', { state: { placed: true } }) }
-    catch (e) { setProblem(errorMessage(e)) } finally { setBusy(false) }
+    try {
+      const stores = Array.from(new Set(cart.map(c => c.store.id)))
+      for (const storeId of stores) {
+        const items = cart.filter(c => c.store.id === storeId)
+        await api.post('/orders', { store_id: storeId, customer_lat: items[0].customer_lat, customer_lng: items[0].customer_lng, items: items.map(c => ({ product_id: c.product.id, quantity: c.quantity })) })
+      }
+      setCart([])
+      navigate('/orders', { state: { placed: true } })
+    } catch (e) { setProblem(errorMessage(e)) } finally { setBusy(false) }
   }
-  if (!cart) return <Empty title="Your bag is ready for something good." text="Browse the catalog and choose a store with a strong availability signal." action={<Link to="/" className="button primary">Browse products <ArrowRight size={16}/></Link>} />
-  return <div className="cart-layout"><div><div className="eyebrow">YOUR BAG</div><h1>Ready when you are.</h1><p className="muted">Matched to a nearby store with stock confidence.</p><div className="cart-row"><img src={cart.product.image_url}/><div><small>{cart.product.category}</small><h3>{cart.product.name}</h3><b>{cash(cart.product.price)}</b><div className="quantity"><button onClick={() => cart.quantity > 1 && setCart({ ...cart, quantity: cart.quantity - 1 })}>−</button>{cart.quantity}<button onClick={() => setCart({ ...cart, quantity: cart.quantity + 1 })}>+</button></div></div><button className="text-button" onClick={() => setCart(null)}>Remove</button></div><div className="selected-store"><Truck size={19}/><span><b>{cart.store.name}</b><small>{cart.store.area} · {cart.store.expected_delivery} · {cart.store.confidence_percentage}% confidence</small></span><Check size={17}/></div></div>
-    <aside className="checkout"><div className="eyebrow">ORDER SUMMARY</div><h3>Quick checkout</h3><p><span>Items ({cart.quantity})</span><b>{cash(cart.product.price * cart.quantity)}</b></p><p><span>Delivery</span><b className="green">Included</b></p><hr/><p className="total"><span>Total</span><b>{cash(cart.product.price * cart.quantity)}</b></p><div className="payment-note"><Check size={14}/> Demo checkout · no payment collected</div>{problem && <div className="alert error">{problem}</div>}<button className="button primary full" disabled={busy} onClick={place}>{busy ? 'Placing order…' : 'Place demo order'} <ArrowRight size={16}/></button><small className="muted">Inventory is updated after placement.</small></aside></div>
+  if (cart.length === 0) return <Empty title="Your bag is ready for something good." text="Browse the catalog and choose a store with a strong availability signal." action={<Link to="/" className="button primary">Browse products <ArrowRight size={16}/></Link>} />
+  const stores = Array.from(new Set(cart.map(c => c.store.id))).map(id => cart.find(c => c.store.id === id)?.store!)
+  const totalQuantity = cart.reduce((a, b) => a + b.quantity, 0)
+  const totalPrice = cart.reduce((a, b) => a + (b.product.price * b.quantity), 0)
+  return <div className="cart-layout"><div><div className="eyebrow">YOUR BAG</div><h1>Ready when you are.</h1><p className="muted">Matched to nearby stores with stock confidence.</p>
+    {cart.map((item, i) => <div className="cart-row" key={i}><img src={item.product.image_url}/><div><small>{item.product.category}</small><h3>{item.product.name}</h3><b>{cash(item.product.price)}</b><div className="quantity"><button onClick={() => item.quantity > 1 && setCart(cart.map((c, j) => j === i ? { ...c, quantity: c.quantity - 1 } : c))}>−</button>{item.quantity}<button onClick={() => setCart(cart.map((c, j) => j === i ? { ...c, quantity: c.quantity + 1 } : c))}>+</button></div></div><button className="text-button" onClick={() => setCart(cart.filter((_, j) => j !== i))}>Remove</button></div>)}
+    <div className="selected-store">
+      <Truck size={19}/><span><b>Fulfilling from {stores.length} store{stores.length > 1 ? 's' : ''}</b><small>{stores.map(s => s.name).join(', ')}</small></span><Check size={17}/>
+    </div></div>
+    <aside className="checkout"><div className="eyebrow">ORDER SUMMARY</div><h3>Quick checkout</h3><p><span>Items ({totalQuantity})</span><b>{cash(totalPrice)}</b></p><p><span>Delivery</span><b className="green">Included</b></p><hr/><p className="total"><span>Total</span><b>{cash(totalPrice)}</b></p><div className="payment-note"><Check size={14}/> Demo checkout · no payment collected</div>{problem && <div className="alert error">{problem}</div>}<button className="button primary full" disabled={busy} onClick={place}>{busy ? 'Placing order…' : 'Place demo order'} <ArrowRight size={16}/></button><small className="muted">Inventory is updated after placement.</small></aside></div>
 }
 
 function CustomerOrders() {
