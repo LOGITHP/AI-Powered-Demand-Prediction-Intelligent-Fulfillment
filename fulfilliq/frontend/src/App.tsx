@@ -249,15 +249,16 @@ function EventLedger({ admin }: { admin: boolean }) {
   const url = '/admin/events?limit=200' + (source ? '&source=' + source : '') + (!admin && user?.store_id ? '&store_id=' + user.store_id : '') + (storeFilter ? '&store_id=' + storeFilter : '')
   const { data = [], isLoading, error, refetch } = useApi<any[]>(['events', source, storeFilter, admin], url)
   const { data: summary } = useApi<any>(['source-summary'], '/admin/source-summary', admin)
+  const fullForms: Record<string, string> = { POS: 'Point of Sale (POS)', WMS: 'Warehouse System (WMS)', ERP: 'Enterprise Resource Planning (ERP)', RFID: 'Radio Frequency ID (RFID)' }
   return <>
     <Title eyebrow={admin ? 'MULTI-SOURCE EVENT LEDGER' : 'STORE EVENT LEDGER'} title="Every signal, every source." text="POS, WMS, ERP and RFID events flowing into the inventory reconciliation engine." action={<button className="button secondary" onClick={() => refetch()}><RefreshCw size={15}/> Refresh</button>}/>
-    {admin && summary && <div className="kpi-grid">{Object.entries(summary).map(([src, data]: [string, any]) => <KPI key={src} title={src + ' events'} value={data.total.toLocaleString()} note={Object.keys(data.event_types).length + ' event types'} icon={src === 'POS' ? StoreIcon : src === 'WMS' ? Boxes : src === 'RFID' ? Activity : ClipboardList}/>)}</div>}
+    {admin && summary && <div className="kpi-grid">{Object.entries(summary).map(([src, data]: [string, any]) => <KPI key={src} title={(fullForms[src] || src) + ' events'} value={data.total.toLocaleString()} note={Object.keys(data.event_types).length + ' event types'} icon={src === 'POS' ? StoreIcon : src === 'WMS' ? Boxes : src === 'RFID' ? Activity : ClipboardList}/>)}</div>}
     <Panel title={data.length + ' events'} subtitle="Most recent events across all sources." action={<div className="filter-row">
-      <select value={source} onChange={(e) => setSource(e.target.value)}><option value="">All sources</option><option value="POS">POS</option><option value="WMS">WMS</option><option value="ERP">ERP</option><option value="RFID">RFID</option></select>
+      <select value={source} onChange={(e) => setSource(e.target.value)}><option value="">All sources</option><option value="POS">Point of Sale (POS)</option><option value="WMS">Warehouse System (WMS)</option><option value="ERP">Enterprise Resource Planning (ERP)</option><option value="RFID">Radio Frequency ID (RFID)</option></select>
       {admin && <input className="table-search" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} placeholder="Store ID"/>}
     </div>}>
       {error && <QueryError error={error}/>}{isLoading ? <Loading/> : <div className="table-wrap"><table><thead><tr><th>Source</th><th>Event</th><th>Store</th><th>Product</th><th>Δ Qty</th><th>Reported</th><th>Timestamp</th><th>Note</th></tr></thead><tbody>
-        {data.map((e: any) => <tr key={e.id}><td><span className="source-badge" style={{ background: SOURCE_COLORS[e.source] || '#666' }}>{e.source}</span></td><td>{e.event_type.replaceAll('_', ' ')}</td><td>Store {e.store_id}</td><td>#{e.product_id}</td><td className={e.quantity_delta > 0 ? 'text-green' : e.quantity_delta < 0 ? 'text-red' : ''}>{e.quantity_delta > 0 ? '+' : ''}{e.quantity_delta}</td><td>{e.reported_quantity ?? '—'}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td><td><small>{e.note}</small></td></tr>)}
+        {data.map((e: any) => <tr key={e.id}><td><span className="source-badge" style={{ background: SOURCE_COLORS[e.source] || '#666' }}>{fullForms[e.source] || e.source}</span></td><td>{e.event_type.replaceAll('_', ' ')}</td><td>Store {e.store_id}</td><td>#{e.product_id}</td><td className={e.quantity_delta > 0 ? 'text-green' : e.quantity_delta < 0 ? 'text-red' : ''}>{e.quantity_delta > 0 ? '+' : ''}{e.quantity_delta}</td><td>{e.reported_quantity ?? '—'}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td><td><small>{e.note}</small></td></tr>)}
       </tbody></table></div>}
     </Panel>
   </>
@@ -269,6 +270,7 @@ function ReconciliationView({ admin }: { admin: boolean }) {
   const [productId, setProductId] = useState('1')
   const url = '/admin/reconciliation/' + storeId + '/' + productId
   const { data, isLoading, error, refetch } = useApi<any>(['reconciliation', storeId, productId], url, !!storeId && !!productId)
+  const fullForms: Record<string, string> = { POS: 'Point of Sale (POS)', WMS: 'Warehouse System (WMS)', ERP: 'Enterprise Resource Planning (ERP)', RFID: 'Radio Frequency ID (RFID)' }
   return <>
     <Title eyebrow="INVENTORY RECONCILIATION" title="Four sources, one truth." text="Compare what POS, WMS, ERP and RFID report for the same SKU at the same store." action={<button className="button secondary" onClick={() => refetch()}><RefreshCw size={15}/> Refresh</button>}/>
     <Panel title="Lookup" subtitle="Enter a store and product to reconcile.">
@@ -285,7 +287,7 @@ function ReconciliationView({ admin }: { admin: boolean }) {
       <Panel title="Source comparison" subtitle="Latest reported quantity from each data source.">
         <div className="reconciliation-grid">{Object.entries(data.sources).map(([src, info]: [string, any]) => (
           <article className="recon-card" key={src} style={{ borderTopColor: SOURCE_COLORS[src] || '#666' }}>
-            <span className="source-badge" style={{ background: SOURCE_COLORS[src] || '#666' }}>{src}</span>
+            <span className="source-badge" style={{ background: SOURCE_COLORS[src] || '#666' }}>{fullForms[src] || src}</span>
             <b className="recon-qty">{info.latest_reported_quantity ?? '—'}</b>
             <small>Latest: {info.latest_event_type?.replaceAll('_', ' ') || 'None'}</small>
             <small>{info.event_count} events</small>
