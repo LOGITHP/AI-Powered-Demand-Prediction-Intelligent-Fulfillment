@@ -7,3 +7,16 @@ __pycache__/
 .env
 .DS_Store
 node_modules/
+
+# Agent and GSD metadata
+.agent/
+.agents/
+.gemini/
+.gsd/
+adapters/
+agent_handoff.md
+GSD-STYLE.md
+PROJECT_RULES.md
+model_capabilities.yaml
+VERSION
+/scripts/
