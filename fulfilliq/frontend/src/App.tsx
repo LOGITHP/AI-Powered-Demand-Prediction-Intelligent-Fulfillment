@@ -258,7 +258,7 @@ function EventLedger({ admin }: { admin: boolean }) {
       {admin && <input className="table-search" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} placeholder="Store ID"/>}
     </div>}>
       {error && <QueryError error={error}/>}{isLoading ? <Loading/> : <div className="table-wrap"><table><thead><tr><th>Source</th><th>Event</th><th>Store</th><th>Product</th><th>Δ Qty</th><th>Reported</th><th>Timestamp</th><th>Note</th></tr></thead><tbody>
-        {data.map((e: any) => <tr key={e.id}><td><span className="source-badge" style={{ background: SOURCE_COLORS[e.source] || '#666' }}>{fullForms[e.source] || e.source}</span></td><td>{e.event_type.replaceAll('_', ' ')}</td><td>Store {e.store_id}</td><td>#{e.product_id}</td><td className={e.quantity_delta > 0 ? 'text-green' : e.quantity_delta < 0 ? 'text-red' : ''}>{e.quantity_delta > 0 ? '+' : ''}{e.quantity_delta}</td><td>{e.reported_quantity ?? '—'}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td><td><small>{e.note}</small></td></tr>)}
+        {data.map((e: any) => <tr key={e.id}><td><span className="source-badge" style={{ background: SOURCE_COLORS[e.source] || '#666' }}>{e.source}</span> <span className="source-label">{fullForms[e.source]?.replace(/ \(.+\)/, '') || e.source}</span></td><td>{e.event_type.replaceAll('_', ' ')}</td><td>Store {e.store_id}</td><td>#{e.product_id}</td><td className={e.quantity_delta > 0 ? 'text-green' : e.quantity_delta < 0 ? 'text-red' : ''}>{e.quantity_delta > 0 ? '+' : ''}{e.quantity_delta}</td><td>{e.reported_quantity ?? '—'}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td><td><small>{e.note}</small></td></tr>)}
       </tbody></table></div>}
     </Panel>
   </>
@@ -287,7 +287,10 @@ function ReconciliationView({ admin }: { admin: boolean }) {
       <Panel title="Source comparison" subtitle="Latest reported quantity from each data source.">
         <div className="reconciliation-grid">{Object.entries(data.sources).map(([src, info]: [string, any]) => (
           <article className="recon-card" key={src} style={{ borderTopColor: SOURCE_COLORS[src] || '#666' }}>
-            <span className="source-badge" style={{ background: SOURCE_COLORS[src] || '#666' }}>{fullForms[src] || src}</span>
+            <div>
+              <span className="source-badge" style={{ background: SOURCE_COLORS[src] || '#666' }}>{src}</span>
+              <span className="source-label-card">{fullForms[src]?.replace(/ \(.+\)/, '') || src}</span>
+            </div>
             <b className="recon-qty">{info.latest_reported_quantity ?? '—'}</b>
             <small>Latest: {info.latest_event_type?.replaceAll('_', ' ') || 'None'}</small>
             <small>{info.event_count} events</small>

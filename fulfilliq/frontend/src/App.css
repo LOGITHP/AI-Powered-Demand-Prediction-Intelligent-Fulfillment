@@ -195,3 +195,62 @@
 .recon-card .source-badge { margin-bottom: 4px; }
 .recon-qty { font-size: 2rem; font-weight: 800; color: var(--fg); line-height: 1; }
 .recon-card small { color: #777; font-size: 11px; }
+
+.source-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.reconciliation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.recon-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: white;
+  border: 1px solid #edf0ea;
+  border-top: 4px solid #666;
+  border-radius: 8px;
+}
+
+.recon-card b.recon-qty {
+  font-size: 32px;
+  font-weight: 600;
+  color: #172b22;
+  line-height: 1;
+}
+
+.recon-card small {
+  font-size: 13px;
+  color: #5c7066;
+}
+
+
+.source-label {
+  font-size: 13px;
+  color: #5c7066;
+  margin-left: 8px;
+}
+.source-label-card {
+  font-size: 13px;
+  color: #5c7066;
+  font-weight: 500;
+  margin-left: 8px;
+}
+.recon-card > div {
+  display: flex;
+  align-items: center;
+}
+
