@@ -1,0 +1,9 @@
+/ml_models_standalone/venv/
+*.joblib
+*.csv
+__pycache__/
+*.db
+*.sqlite3
+.env
+.DS_Store
+node_modules/

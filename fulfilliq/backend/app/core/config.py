@@ -17,5 +17,15 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
+    @property
+    def async_database_url(self) -> str:
+        # Render provides PostgreSQL URLs with the generic scheme, while this
+        # application uses SQLAlchemy's async engine and asyncpg driver.
+        if self.DATABASE_URL.startswith("postgres://"):
+            return self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+        if self.DATABASE_URL.startswith("postgresql://"):
+            return self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.DATABASE_URL
+
 
 settings = Settings()

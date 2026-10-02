@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: fulfilliq-postgres
     environment:
       POSTGRES_USER: fulfilliq_user
-      POSTGRES_PASSWORD: fulfilliq_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fulfilliq_dev_only}
       POSTGRES_DB: fulfilliq_db
     ports:
       - "5432:5432"
@@ -25,14 +23,18 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://fulfilliq_user:fulfilliq_password@postgres:5432/fulfilliq_db
-      - JWT_SECRET=super_secret_key_change_in_production
-      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      DATABASE_URL: postgresql+asyncpg://fulfilliq_user:${POSTGRES_PASSWORD:-fulfilliq_dev_only}@postgres:5432/fulfilliq_db
+      JWT_SECRET: ${JWT_SECRET:-fulfilliq-local-development-secret}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      MODEL_STORAGE_PATH: /app/ml_models
+      SEED: ${SEED:-42}
+      HISTORICAL_ORDER_COUNT: ${HISTORICAL_ORDER_COUNT:-30000}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
+    restart: unless-stopped
 
   frontend:
     build:
@@ -47,6 +49,7 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:

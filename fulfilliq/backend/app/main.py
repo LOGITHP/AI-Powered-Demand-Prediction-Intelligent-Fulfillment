@@ -13,7 +13,9 @@ import joblib
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -107,6 +109,14 @@ class GenerateInput(BaseModel):
     seed: int = 42
 
 
+class FulfillmentWeightInput(BaseModel):
+    availability: int = Field(ge=0, le=100)
+    inventory: int = Field(ge=0, le=100)
+    distance: int = Field(ge=0, le=100)
+    future_availability: int = Field(ge=0, le=100)
+    delivery_sla: int = Field(ge=0, le=100)
+
+
 class StoreCreate(BaseModel):
     name: str
     type: StoreTypeEnum
@@ -192,6 +202,23 @@ def logistic(value: float) -> float:
     return 1 / (1 + math.exp(-max(-25, min(25, value))))
 
 
+DEFAULT_SCORE_WEIGHTS = {
+    "availability": 40, "inventory": 20, "distance": 20,
+    "future_availability": 10, "delivery_sla": 10,
+}
+
+
+async def fulfillment_weights(db: AsyncSession) -> dict[str, int]:
+    state = await db.get(SimulationState, 1)
+    if not state or not state.fulfillment_weights:
+        return DEFAULT_SCORE_WEIGHTS.copy()
+    try:
+        saved = json.loads(state.fulfillment_weights)
+        return {name: int(saved.get(name, value)) for name, value in DEFAULT_SCORE_WEIGHTS.items()}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return DEFAULT_SCORE_WEIGHTS.copy()
+
+
 async def active_model(db: AsyncSession, model_type: str):
     if model_type in ACTIVE_MODELS:
         return ACTIVE_MODELS[model_type]
@@ -267,7 +294,10 @@ async def availability_estimate(
     }
 
 
-async def fulfillment_candidate(db: AsyncSession, product: Product, store: Store, inv: Inventory | None, quantity: int, distance: float) -> dict[str, Any]:
+async def fulfillment_candidate(
+    db: AsyncSession, product: Product, store: Store, inv: Inventory | None,
+    quantity: int, distance: float, weights: dict[str, int] | None = None,
+) -> dict[str, Any]:
     demand, demand_model = await demand_estimate(db, product, store, inv, datetime.utcnow().hour, datetime.utcnow().weekday())
     probability, details = await availability_estimate(db, product, store, inv, quantity, demand=demand)
     available = details["available_quantity"]
@@ -279,7 +309,12 @@ async def fulfillment_candidate(db: AsyncSession, product: Product, store: Store
         "availability_confidence": round(probability * 100, 1), "inventory_adequacy": round(adequacy, 1),
         "distance": round(distance_score, 1), "future_availability": round(future, 1), "delivery_sla": round(sla, 1),
     }
-    score = 0.4 * components["availability_confidence"] + 0.2 * adequacy + 0.2 * distance_score + 0.1 * future + 0.1 * sla
+    weights = weights or DEFAULT_SCORE_WEIGHTS
+    score = sum(components[key] * weights[name] / 100 for key, name in (
+        ("availability_confidence", "availability"), ("inventory_adequacy", "inventory"),
+        ("distance", "distance"), ("future_availability", "future_availability"),
+        ("delivery_sla", "delivery_sla"),
+    ))
     reasons = [
         f"{components['availability_confidence']:.0f}% availability confidence",
         "Sufficient inventory" if available >= quantity else "Requested quantity exceeds available stock",
@@ -292,6 +327,7 @@ async def fulfillment_candidate(db: AsyncSession, product: Product, store: Store
         "confidence_percentage": round(probability * 100), "fulfillment_score": round(score),
         "predicted_demand": demand, "inventory": details, "score_components": components,
         "reasons": reasons, "expected_delivery": "25–40 min" if distance <= 5 else "35–55 min",
+        "score_weights": weights,
         "prediction_source": details["model_version"], "demand_model": demand_model,
     }
 
@@ -491,6 +527,7 @@ async def recommend_store(payload: RecommendationInput, db: AsyncSession = Depen
     if not product or not product.is_active:
         raise HTTPException(status_code=404, detail="Product not found.")
     stores = (await db.scalars(select(Store).where(Store.is_active.is_(True)))).all()
+    weights = await fulfillment_weights(db)
     candidates = []
     for store in stores:
         distance = haversine_km(payload.customer_lat, payload.customer_lng, store.latitude, store.longitude)
@@ -499,7 +536,7 @@ async def recommend_store(payload: RecommendationInput, db: AsyncSession = Depen
         inventory = await current_inventory(db, store.id, product.id)
         if inventory is None:
             continue
-        candidates.append(await fulfillment_candidate(db, product, store, inventory, payload.quantity, distance))
+        candidates.append(await fulfillment_candidate(db, product, store, inventory, payload.quantity, distance, weights))
     if not candidates:
         raise HTTPException(status_code=404, detail="No nearby stores carry this item. Try a wider search radius.")
     candidates.sort(key=lambda item: (-item["fulfillment_score"], -item["availability_confidence"], item["distance_km"]))
@@ -510,7 +547,7 @@ async def recommend_store(payload: RecommendationInput, db: AsyncSession = Depen
     await db.commit()
     return {"product": product_payload(product), "requested_quantity": payload.quantity,
             "estimated_geographic_distance": True, "recommended_store": candidates[0], "alternatives": candidates[1:5],
-            "weights": {"availability": 40, "inventory": 20, "distance": 20, "future_availability": 10, "delivery_sla": 10}}
+            "weights": weights}
 
 
 def order_payload(order: Order) -> dict[str, Any]:
@@ -599,8 +636,9 @@ async def store_orders(user: User = Depends(require_roles(RoleEnum.STORE_MANAGER
 async def store_risk_rows(db: AsyncSession, store_id: int, limit: int = 60):
     rows = (await db.execute(select(Inventory, Product).join(Product).where(Inventory.store_id == store_id).order_by(Inventory.reported_quantity))).all()
     risk = []
+    store = await db.get(Store, store_id)
     for inv, product in rows[:limit]:
-        demand, _ = await demand_estimate(db, product, await db.get(Store, store_id), inv, datetime.utcnow().hour, datetime.utcnow().weekday())
+        demand, _ = await demand_estimate(db, product, store, inv, datetime.utcnow().hour, datetime.utcnow().weekday())
         short = max(0, math.ceil(demand + inv.safety_stock - inv.reported_quantity + inv.reserved_quantity))
         risk.append({**inventory_payload(inv, product), "predicted_demand": demand,
                      "risk": "HIGH" if short > 0 else ("MEDIUM" if inv.reported_quantity <= inv.reorder_level else "LOW"),
@@ -629,15 +667,19 @@ async def store_recommendations(user: User = Depends(require_roles(RoleEnum.STOR
         for alert in alerts[:10]:
             if alert["projected_shortage"] <= 0:
                 continue
-            recs.append(Recommendation(
-                id=0, store_id=user.store_id, product_id=alert["product_id"], action_type="REPLENISHMENT",
+            rec = Recommendation(
+                store_id=user.store_id, product_id=alert["product_id"], action_type="REPLENISHMENT",
                 recommended_quantity=alert["projected_shortage"], deadline=datetime.utcnow() + timedelta(hours=1),
                 reason=f"Predicted demand of {alert['predicted_demand']} units plus safety stock exceeds available inventory.",
                 status="PENDING",
-            ))
-            # Include this dynamic card in the response; persisted when acknowledged.
-            recs[-1].product = await db.get(Product, alert["product_id"])
-            recs[-1].store = await db.get(Store, user.store_id)
+            )
+            db.add(rec)
+            recs.append(rec)
+        await db.flush()
+        await db.commit()
+        for rec in recs:
+            rec.product = await db.get(Product, rec.product_id)
+            rec.store = await db.get(Store, rec.store_id)
     return [recommendation_payload(r) for r in recs]
 
 
@@ -683,14 +725,36 @@ async def admin_analytics(user: User = Depends(require_roles(RoleEnum.PLATFORM_A
     low_stock = await db.scalar(select(func.count(Inventory.id)).where(Inventory.reported_quantity <= Inventory.reorder_level)) or 0
     demand_version = await db.scalar(select(ModelVersion.version_name).where(ModelVersion.model_type == "DEMAND", ModelVersion.is_active.is_(True)))
     availability_version = await db.scalar(select(ModelVersion.version_name).where(ModelVersion.model_type == "AVAILABILITY", ModelVersion.is_active.is_(True)))
+    hourly_rows = (await db.execute(
+        select(HistoricalOrder.hour, func.sum(HistoricalOrder.quantity))
+        .group_by(HistoricalOrder.hour).order_by(HistoricalOrder.hour)
+    )).all()
+    hourly_map = {int(hour): int(units or 0) for hour, units in hourly_rows}
+    category_rows = (await db.execute(
+        select(Product.category, func.sum(HistoricalOrder.quantity))
+        .join(HistoricalOrder, HistoricalOrder.product_id == Product.id)
+        .group_by(Product.category).order_by(func.sum(HistoricalOrder.quantity).desc())
+    )).all()
+    health_counts = {"HEALTHY": 0, "MEDIUM": 0, "HIGH": 0}
+    health_rows = (await db.execute(
+        select(Inventory.store_id, func.count(Inventory.id),
+               func.sum(__import__("sqlalchemy").case((Inventory.reported_quantity <= Inventory.reorder_level, 1), else_=0)))
+        .group_by(Inventory.store_id)
+    )).all()
+    for _, total, risk_count in health_rows:
+        ratio = (risk_count or 0) / max(1, total or 0)
+        health_counts["HIGH" if ratio > 0.32 else "MEDIUM" if ratio > 0.19 else "HEALTHY"] += 1
     return {
         "stores": stores, "warehouses": warehouses, "products": products, "active_orders": live_orders,
         "high_risk_items": low_stock, "inventory_records": inventory_count, "historical_orders": historical_count,
         "predicted_shortages": low_stock, "average_availability_confidence": round((avg_confidence or 0) * 100, 1),
         "stockout_rate": round(stockout_count / historical_count * 100, 1) if historical_count else 0,
-        "fulfillment_success_rate": round((await db.scalar(select(func.avg(func.cast(HistoricalOrder.fulfilled, __import__("sqlalchemy").Float)))) or 0) * 100, 1),
+        "fulfillment_success_rate": round((await db.scalar(select(func.avg(func.cast(HistoricalOrder.fulfilled, __import__("sqlalchemy").Integer)))) or 0) * 100, 1),
         "demand_model": demand_version or "Seasonal baseline", "availability_model": availability_version or "Availability baseline",
         "prediction_count": predictions_count, "generated_at": datetime.utcnow().isoformat(),
+        "hourly_demand": [{"hour": hour, "units": hourly_map.get(hour, 0)} for hour in range(24)],
+        "category_mix": [{"category": category, "units": int(units or 0)} for category, units in category_rows],
+        "store_health": [{"risk": key, "count": value} for key, value in health_counts.items()],
     }
 
 
@@ -735,6 +799,28 @@ async def admin_models(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMI
              "training_timestamp": m.training_timestamp.isoformat(), "is_active": m.is_active,
              "metrics": json.loads(m.metrics or "{}"), "features": json.loads(m.features or "[]"),
              "hyperparameters": json.loads(m.hyperparameters or "{}") } for m in models]
+
+
+@app.get("/admin/settings/fulfillment")
+async def get_fulfillment_settings(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)), db: AsyncSession = Depends(get_db)):
+    return {"weights": await fulfillment_weights(db), "note": "Prototype defaults; weights must total 100."}
+
+
+@app.put("/admin/settings/fulfillment")
+async def update_fulfillment_settings(
+    payload: FulfillmentWeightInput, user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    weights = payload.model_dump()
+    if sum(weights.values()) != 100:
+        raise HTTPException(status_code=422, detail="Fulfillment score weights must total 100.")
+    state = await db.get(SimulationState, 1)
+    if not state:
+        state = SimulationState(id=1, simulated_at=datetime.utcnow(), seed=settings.SEED, is_running=False)
+        db.add(state)
+    state.fulfillment_weights = json.dumps(weights)
+    await db.commit()
+    return {"weights": weights, "note": "Updated prototype score weights."}
 
 
 async def train_model(db: AsyncSession, model_type: str, sample_fraction: float = 1.0) -> dict[str, Any]:
@@ -890,8 +976,14 @@ async def simulation_step(user: User = Depends(require_roles(RoleEnum.PLATFORM_A
         inv.last_updated = datetime.utcnow()
         db.add(InventoryEvent(store_id=inv.store_id, product_id=inv.product_id, event_type="sale", quantity_delta=-delta, note="One-hour simulation step"))
         changes.append({"store_id": inv.store_id, "product_id": inv.product_id, "units_sold": delta, "stock_after": inv.reported_quantity})
+    transitions = []
+    for current, following in (("CONFIRMED", "PREPARING"), ("PREPARING", "OUT_FOR_DELIVERY"), ("OUT_FOR_DELIVERY", "DELIVERED")):
+        order = await db.scalar(select(Order).where(Order.status == current).order_by(Order.timestamp).limit(1))
+        if order:
+            order.status = following
+            transitions.append({"order_id": order.id, "from": current, "to": following})
     await db.commit()
-    return {"simulated_at": state.simulated_at.isoformat(), "changes": changes}
+    return {"simulated_at": state.simulated_at.isoformat(), "changes": changes, "order_transitions": transitions}
 
 
 @app.post("/admin/transfers", status_code=201)
@@ -921,10 +1013,13 @@ async def transfer_stock(payload: TransferInput, user: User = Depends(require_ro
 @app.get("/admin/evaluation")
 async def evaluation(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)), db: AsyncSession = Depends(get_db)):
     """Compare nearest-store and fulfillment ranking on a deterministic historical slice."""
-    records = (await db.scalars(select(HistoricalOrder).order_by(HistoricalOrder.id).limit(500))).all()
+    records = (await db.scalars(select(HistoricalOrder).order_by(HistoricalOrder.id).limit(250))).all()
     stores = (await db.scalars(select(Store))).all()
     products = {p.id: p for p in (await db.scalars(select(Product))).all()}
     store_map = {s.id: s for s in stores}
+    inventory_rows = (await db.scalars(select(Inventory))).all()
+    inventory_map = {(inv.store_id, inv.product_id): inv for inv in inventory_rows}
+    weights = await fulfillment_weights(db)
     if not records or not stores:
         return {"sample_size": 0, "baseline": {}, "fulfilliq": {}, "note": "Generate historical records to evaluate strategies."}
     # The held-out generated order's fulfillment outcome is applied to each strategy's
@@ -941,24 +1036,42 @@ async def evaluation(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)
             continue
         candidate_scores = []
         for candidate in stores:
-            inv = await current_inventory(db, candidate.id, product.id)
+            inv = inventory_map.get((candidate.id, product.id))
             dist = haversine_km(record.customer_lat, record.customer_lng, candidate.latitude, candidate.longitude)
             if dist < 18 and inv:
-                # Current candidate scoring is based on current simulated inventory.
-                candidate_scores.append(await fulfillment_candidate(db, product, candidate, inv, record.quantity, dist))
-        chosen = max(candidate_scores, key=lambda x: x["fulfillment_score"]) if candidate_scores else store_payload(nearest)
-        chosen_id = chosen["id"]
+                available = max(0, inv.reported_quantity - inv.reserved_quantity)
+                demand = 1.4 if product.category in ("Grocery", "Beverages", "Snacks", "Fruits", "Vegetables") else 0.8
+                confidence = 100 * (0.72 * logistic((available - record.quantity - demand * 0.55) * 0.34) + 0.28 * inv.inventory_accuracy)
+                adequacy = min(100, 100 * available / max(1, record.quantity + demand))
+                distance_score = max(0, 100 * (1 - dist / 18))
+                future_score = 100 * logistic((available - record.quantity - demand) * 0.34)
+                delivery_score = max(20, 100 - dist * 5.5)
+                score = sum((
+                    weights["availability"] * confidence,
+                    weights["inventory"] * adequacy,
+                    weights["distance"] * distance_score,
+                    weights["future_availability"] * future_score,
+                    weights["delivery_sla"] * delivery_score,
+                )) / 100
+                candidate_scores.append((score, candidate.id, dist, available, inv.inventory_accuracy))
+        chosen = max(candidate_scores, default=(0, nearest.id, 0, 0, 0), key=lambda row: row[0])
+        chosen_id = chosen[1]
         # Recorded outcome is the observed positive label; for different stores we
         # estimate from their inventory snapshot and keep the metric definition explicit.
-        baseline_success = bool(record.fulfilled) if nearest.id == record.store_id else (record.inventory_before_order >= record.quantity and record.inventory_accuracy >= 0.83)
-        fiq_success = bool(record.fulfilled) if chosen_id == record.store_id else (
-            (await current_inventory(db, chosen_id, product.id)) is not None
-            and (await current_inventory(db, chosen_id, product.id)).reported_quantity >= record.quantity
+        baseline_inv = inventory_map.get((nearest.id, product.id))
+        fiq_inv = inventory_map.get((chosen_id, product.id))
+        baseline_success = bool(record.fulfilled) if nearest.id == record.store_id else bool(
+            baseline_inv and baseline_inv.reported_quantity - baseline_inv.reserved_quantity >= record.quantity
+            and baseline_inv.inventory_accuracy >= 0.8
+        )
+        fiq_success = bool(record.fulfilled) if chosen_id == record.store_id else bool(
+            fiq_inv and fiq_inv.reported_quantity - fiq_inv.reserved_quantity >= record.quantity
+            and fiq_inv.inventory_accuracy >= 0.8
         )
         baseline_ok += int(baseline_success)
         fiq_ok += int(fiq_success)
         baseline_dist.append(haversine_km(record.customer_lat, record.customer_lng, nearest.latitude, nearest.longitude))
-        fiq_dist.append(haversine_km(record.customer_lat, record.customer_lng, store_map.get(chosen_id, nearest).latitude, store_map.get(chosen_id, nearest).longitude))
+        fiq_dist.append(chosen[2] if candidate_scores else haversine_km(record.customer_lat, record.customer_lng, nearest.latitude, nearest.longitude))
     n = max(1, len(records))
     return {
         "sample_size": len(records),
@@ -966,7 +1079,7 @@ async def evaluation(user: User = Depends(require_roles(RoleEnum.PLATFORM_ADMIN)
                      "average_distance_km": round(float(np.mean(baseline_dist)), 2), "stockout_rate": round(100 * (1 - baseline_ok / n), 1)},
         "fulfilliq": {"strategy": "FulfillIQ score", "successful_fulfillment_rate": round(100 * fiq_ok / n, 1),
                       "average_distance_km": round(float(np.mean(fiq_dist)), 2), "stockout_rate": round(100 * (1 - fiq_ok / n), 1)},
-        "note": "Computed on a 500-order generated-data slice. For candidates other than the recorded store, outcomes use the current inventory snapshot; this is a prototype simulation, not a production experiment.",
+        "note": "Computed on a 250-order generated-data slice. For candidates other than the recorded store, outcomes use the current inventory snapshot; this is a prototype simulation, not a production experiment.",
     }
 
 
@@ -988,3 +1101,23 @@ async def list_transfers(user: User = Depends(require_roles(RoleEnum.PLATFORM_AD
     rows = (await db.scalars(select(StoreTransfer).order_by(StoreTransfer.created_at.desc()).limit(100))).all()
     return [{"id": r.id, "from_store_id": r.from_store_id, "to_store_id": r.to_store_id, "product_id": r.product_id,
              "quantity": r.quantity, "status": r.status, "created_at": r.created_at.isoformat()} for r in rows]
+
+
+# In the Render image, the Vite build is copied beside the backend. Keep API
+# routes first, then serve assets and let React Router handle browser routes.
+static_dir = Path(__file__).resolve().parents[1] / "static"
+if static_dir.is_dir():
+    assets_dir = static_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+    @app.get("/{requested_path:path}", include_in_schema=False)
+    async def frontend_fallback(requested_path: str):
+        candidate = (static_dir / requested_path).resolve()
+        try:
+            candidate.relative_to(static_dir.resolve())
+        except ValueError:
+            candidate = static_dir / "index.html"
+        if not candidate.is_file():
+            candidate = static_dir / "index.html"
+        return FileResponse(candidate)
