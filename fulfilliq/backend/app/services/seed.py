@@ -77,15 +77,31 @@ async def seed_database(session: AsyncSession) -> None:
         })
     await session.execute(insert(Store), stores)
 
+    UNSPLASH_MAP = {
+        "Pantry": "https://images.unsplash.com/photo-1584473457406-6240486418e9?w=480&h=360&fit=crop",
+        "Beverages": "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=480&h=360&fit=crop",
+        "Personal Care": "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=480&h=360&fit=crop",
+        "Household": "https://images.unsplash.com/photo-1584824486509-112e4181f1ce?w=480&h=360&fit=crop",
+        "Electronics": "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=480&h=360&fit=crop",
+        "Stationery": "https://images.unsplash.com/photo-1503694978374-8a2fa686963a?w=480&h=360&fit=crop",
+        "Snacks": "https://images.unsplash.com/photo-1621939514649-280e2ee25f60?w=480&h=360&fit=crop",
+        "Fruits": "https://images.unsplash.com/photo-1610832958506-aa56368176cf?w=480&h=360&fit=crop",
+        "Vegetables": "https://images.unsplash.com/photo-1566385101042-1a0aa0c1268c?w=480&h=360&fit=crop",
+        "Baby Care": "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=480&h=360&fit=crop",
+        "Pet Care": "https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=480&h=360&fit=crop",
+        "Kitchen": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=480&h=360&fit=crop",
+        "Health & Wellness": "https://images.unsplash.com/photo-1505576399279-565b52d4ac71?w=480&h=360&fit=crop",
+    }
     products: list[dict] = []
     products.append({
         "id": 1, "sku": "FIQ-ELE-0001", "name": "Wireless Mouse", "category": "Electronics",
         "subcategory": "Computer accessories", "brand": "Orbit Works", "price": 649.0,
-        "unit": "1 unit", "image_url": "https://placehold.co/480x360/f4f3ef/334155?text=Wireless+Mouse", "is_active": True,
+        "unit": "1 unit", "image_url": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=480&h=360&fit=crop", "is_active": True,
     })
     pid = 2
     for category, (names_csv, subs) in CATALOG.items():
         names = [name.strip() for name in names_csv.split(",")]
+        img = UNSPLASH_MAP.get(category, "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=480&h=360&fit=crop")
         for n in range(1, 40):
             base = names[(n - 1) % len(names)]
             variant = (n - 1) // len(names)
@@ -97,7 +113,7 @@ async def seed_database(session: AsyncSession) -> None:
                 "category": category, "subcategory": subs[(n - 1) % len(subs)],
                 "brand": BRANDS[(pid * 3) % len(BRANDS)], "price": round(rng.uniform(29, 2499), 2),
                 "unit": rng.choice(["1 unit", "250 g", "500 g", "1 pack", "1 L"]),
-                "image_url": f"https://placehold.co/480x360/f4f3ef/334155?text={category.replace(' ', '+')}",
+                "image_url": img,
                 "is_active": True,
             })
             pid += 1
