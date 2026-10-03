@@ -25,20 +25,24 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql://warehouse_user:warehouse_password@postgres:5432/warehouse
       - REDIS_URL=redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     volumes:
-      - ../warehouse_ml/models:/app/models # Mount models from ML project
+      - ./backend/models:/app/models
 
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   manager-frontend:
     build:
@@ -48,13 +52,35 @@ services:
     depends_on:
       - backend
 
-  operations-frontend:
+  inbound-frontend:
     build:
-      context: ./operations-frontend
+      context: ./inbound-frontend
     ports:
       - "3001:80"
     depends_on:
       - backend
+
+  outbound-frontend:
+    build:
+      context: ./outbound-frontend
+    ports:
+      - "3002:80"
+    depends_on:
+      - backend
+
+  operations-frontend:
+    build:
+      context: ./operations-frontend
+    ports:
+      - "3003:80"
+    depends_on:
+      - backend
+
+  head-office:
+    build:
+      context: ./head_office_agent
+    ports:
+      - "8001:8000"
 
 volumes:
   pgdata:
