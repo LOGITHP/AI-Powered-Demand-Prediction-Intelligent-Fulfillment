@@ -4,3 +4,7 @@ pydantic
 python-dotenv
 pytest
 requests
+langgraph
+langchain-nvidia-ai-endpoints
+langchain-core
+httpx

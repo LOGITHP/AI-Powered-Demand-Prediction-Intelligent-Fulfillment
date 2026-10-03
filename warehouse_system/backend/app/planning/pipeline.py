@@ -17,6 +17,7 @@ have a full audit trail from day one.
 """
 import logging
 import uuid
+import json
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
@@ -60,6 +61,10 @@ class PlanningPipeline:
         self.context = {}
 
     # ---------- state machine plumbing ----------
+    @staticmethod
+    def _json_safe(value):
+        return json.loads(json.dumps(value, default=str))
+
     def _step(self, name: str, fn):
         """Run one step; record OK / WARN / FAILED with detail."""
         entry = {"step": name, "status": "OK", "detail": None, "at": datetime.utcnow().isoformat()}
@@ -74,6 +79,7 @@ class PlanningPipeline:
             self.trace.append(entry)
             self._persist("FAILED")
             raise
+        entry["detail"] = self._json_safe(entry["detail"])
         self.trace.append(entry)
         self._persist("RUNNING")
         return self.context.get(f"out_{name}")

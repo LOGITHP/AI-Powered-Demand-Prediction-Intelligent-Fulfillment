@@ -149,3 +149,43 @@ def get_decisions():
 @router.get("/health")
 def health():
     return {"status": "healthy"}
+
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
+import httpx
+
+class BookingItem(BaseModel):
+    product_id: int
+    expected_quantity: int
+
+class BookingRequest(BaseModel):
+    supplier: str
+    expected_arrival: str
+    priority: str
+    items: List[BookingItem]
+
+@router.post("/bookings")
+async def create_booking(request: BookingRequest):
+    # Determine the best warehouse to send this to.
+    # In a real setup, we'd use state_manager or LangGraph.
+    # We will pick "WH-001" (our local warehouse) which runs on backend:8000
+    target_warehouse_url = "http://backend:8000/api/inbound/shipments"
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(target_warehouse_url, json=request.dict())
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
+            
+            # Update our state manager loosely
+            state_manager.network_state.pending_decisions += 1
+            
+            return {
+                "status": "success", 
+                "assigned_warehouse": "WH-001",
+                "warehouse_response": resp.json()
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+

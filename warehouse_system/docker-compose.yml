@@ -82,5 +82,21 @@ services:
     ports:
       - "8001:8000"
 
+  head-office-frontend:
+    build:
+      context: ./head-office-frontend
+    ports:
+      - "3004:80"
+    depends_on:
+      - head-office
+
+  booking-site-frontend:
+    build:
+      context: ./booking-site-frontend
+    ports:
+      - "3005:80"
+    depends_on:
+      - backend
+
 volumes:
   pgdata:

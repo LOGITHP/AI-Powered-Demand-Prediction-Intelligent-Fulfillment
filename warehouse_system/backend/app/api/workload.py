@@ -1,11 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 from app.db.database import get_db
 from app.db.models import WorkloadQueue, Task, OperationalEvent
 from app.api.auth import get_current_user
 from app.schemas import WorkloadRequest
 
 router = APIRouter()
+
+PRIORITY_ORDER = case(
+    (Task.priority == "URGENT", 4),
+    (Task.priority == "HIGH", 3),
+    (Task.priority == "NORMAL", 2),
+    (Task.priority == "LOW", 1),
+    else_=0,
+)
 
 @router.get("/")
 def get_workload(current_user = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -86,7 +95,7 @@ def get_next_task(current_user = Depends(get_current_user), db: Session = Depend
         Task.warehouse_id == current_user.warehouse_id,
         Task.status.in_(["PENDING", "PLANNED", "ASSIGNED"])
     ).order_by(
-        Task.priority.desc(),
+        PRIORITY_ORDER.desc(),
         Task.created_at.asc()
     ).first()
     
