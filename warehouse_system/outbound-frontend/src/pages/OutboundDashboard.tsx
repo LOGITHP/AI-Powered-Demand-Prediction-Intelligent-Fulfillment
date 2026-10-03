@@ -81,10 +81,11 @@ export default function OutboundDashboard() {
     } catch(err) {}
   };
 
-  const handleReply = async (id: number) => {
-    if (!replyText) return;
+  const handleReply = async (id: number, text?: string) => {
+    const finalReply = text || replyText;
+    if (!finalReply) return;
     try {
-      await api.post(`/notifications/${id}/reply`, { reply: replyText });
+      await api.post(`/notifications/${id}/reply`, { reply: finalReply });
       setReplyText('');
       fetchData();
     } catch (err) {
@@ -242,10 +243,9 @@ export default function OutboundDashboard() {
                           autoFocus
                         />
                         <button onClick={() => {
-                          setReplyText("Declined: " + declineReason);
-                          setTimeout(() => handleReply(notif.id), 50);
                           setDecliningId(null);
                           setDeclineReason('');
+                          handleReply(notif.id, "Declined: " + declineReason);
                         }} className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg text-white font-medium text-sm whitespace-nowrap">
                           Submit Decline
                         </button>
@@ -254,8 +254,7 @@ export default function OutboundDashboard() {
                     ) : (
                       <div className="flex gap-2">
                         <button onClick={() => {
-                          setReplyText("Accepted & Started");
-                          setTimeout(() => handleReply(notif.id), 50);
+                          handleReply(notif.id, "Accepted & Started");
                         }} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-white font-medium text-sm flex-1 flex items-center justify-center gap-2">
                           <Check size={16} /> Accept & Start
                         </button>

@@ -7,6 +7,8 @@ from state.manager import StateManager
 from events.handler import EventHandler
 from audit.logger import AuditLogger
 from tools.simulation_tools import SimulationTools
+from tools.resource_tools import ResourceTools
+from decisions.engine import DecisionEngine
 from providers.llm import NvidiaLLMProvider
 from providers.optimization import MockOptimizationProvider
 from communication.mock_adapter import MockCommunicationAdapter
@@ -19,8 +21,10 @@ app = FastAPI(title="Head Office Agent", description="Central intelligence orche
 # Dependency initialization
 repo = InMemoryNetworkStateRepository()
 state_manager = StateManager(repo)
-event_handler = EventHandler(state_manager)
-audit_logger = AuditLogger("head_office_audit.log")
+resource_tools = ResourceTools(state_manager)
+decision_engine = DecisionEngine(state_manager, resource_tools)
+audit_logger = AuditLogger()
+event_handler = EventHandler(state_manager, decision_engine, audit_logger)
 simulation_tools = SimulationTools(state_manager)
 llm_provider = NvidiaLLMProvider()
 comm_adapter = MockCommunicationAdapter()

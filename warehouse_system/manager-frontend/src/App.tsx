@@ -9,6 +9,8 @@ import Forecasting from './pages/Forecasting';
 import Workforce from './pages/Workforce';
 import Analytics from './pages/Analytics';
 import Optimization from './pages/Optimization';
+import AIAgent from './pages/AIAgent';
+import Alerts from './pages/Alerts';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
@@ -35,6 +37,8 @@ function App() {
       <Route path="/workforce" element={<ProtectedRoute><Workforce /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/optimization" element={<ProtectedRoute><Optimization /></ProtectedRoute>} />
+      <Route path="/agent" element={<ProtectedRoute><AIAgent /></ProtectedRoute>} />
+      <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

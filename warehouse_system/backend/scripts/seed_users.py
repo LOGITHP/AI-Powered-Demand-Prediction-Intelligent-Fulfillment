@@ -80,11 +80,50 @@ def seed_data():
         
         # Seed some active tasks
         for i in range(12):
-            db.add(Task(warehouse_id="WH01", process_type="PICKING", priority="HIGH", status="PENDING", instructions=f"Pick order batch {i}"))
+            db.add(Task(warehouse_id="WH01", process_type="PICKING", zone="PICKING_A",
+                        priority="HIGH", status="PENDING",
+                        instructions=f"Pick order batch {i}"))
             
         # Seed an event
         db.add(OperationalEvent(warehouse_id="WH01", event_type="SHIFT_START", description="Shift 1 started", details={}))
-        
+
+    db.commit()
+
+    # Seed labor standards (units one worker processes per hour, per process)
+    from app.db.models import LaborStandard
+    standards = {
+        "RECEIVING": 120.0, "INSPECTION": 90.0, "PUTAWAY": 80.0,
+        "PICKING": 60.0, "PACKING": 70.0, "DISPATCH": 110.0,
+    }
+    for ptype, uph in standards.items():
+        if not db.query(LaborStandard).filter_by(warehouse_id="WH01", process_type=ptype).first():
+            db.add(LaborStandard(warehouse_id="WH01", process_type=ptype, units_per_hour=uph))
+
+    # Mark a pool of workers on-shift so the assignment engine has candidates
+    shift_workers = db.query(Worker).filter(Worker.shift == 1, Worker.status != "ON_SHIFT").limit(12).all()
+    for w in shift_workers:
+        w.status = "ON_SHIFT"
+
+    # Seed 8 weeks of daily volume history (weekly seasonality + gentle noise)
+    # so forecasting/backtesting work from a fresh container.
+    from app.db.models import VolumeHistory
+    from datetime import datetime, timedelta
+    if not db.query(VolumeHistory).first():
+        base = {"RECEIVING": 2400, "INSPECTION": 2000, "PUTAWAY": 1900,
+                "PICKING": 5200, "PACKING": 3400, "DISPATCH": 3000}
+        random.seed(42)
+        today = datetime.utcnow().date()
+        for ptype, avg in base.items():
+            for d in range(56):
+                day = today - timedelta(days=56 - d)
+                weekend_drop = 0.6 if day.weekday() >= 5 else 1.0
+                noise = random.uniform(0.9, 1.1)
+                db.add(VolumeHistory(
+                    warehouse_id="WH01", process_type=ptype,
+                    date=datetime.combine(day, datetime.min.time()),
+                    volume=round(avg * weekend_drop * noise, 1),
+                ))
+
     db.commit()
     db.close()
     print("Database seeded successfully.")

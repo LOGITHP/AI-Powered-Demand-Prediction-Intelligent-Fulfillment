@@ -38,12 +38,19 @@ def _task_zone(task: Task) -> str:
     return _norm(task.zone or task.process_type)
 
 
+def _zones_match(worker_zone: str, task_zone: str) -> bool:
+    """Process-aware match: 'PICKING' matches 'PICKING_A', 'Receiving_A', etc."""
+    if not worker_zone or not task_zone:
+        return False
+    return worker_zone == task_zone or worker_zone.split("_")[0] == task_zone.split("_")[0]
+
+
 def score_pair(task: Task, worker: Worker, now: datetime) -> dict:
     """Explainable cost components for one (task, worker) pair. Higher total is better."""
     worker_zone = _norm(worker.assigned_zone)
     task_zone = _task_zone(task)
 
-    if worker_zone == task_zone:
+    if _zones_match(worker_zone, task_zone):
         zone_pts = ZONE_MATCH_POINTS
         zone_note = "zone match"
     elif worker.skill_level and _norm(worker.skill_level) == "EXPERT":
