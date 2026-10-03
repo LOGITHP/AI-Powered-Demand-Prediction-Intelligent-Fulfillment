@@ -45,11 +45,12 @@ def seed_data():
     
     for i in range(1, 51):
         username = f"worker{i:03d}"
+        worker_id = f"W{i:04d}"
         if not db.query(User).filter(User.username == username).first():
             user = User(
                 username=username,
                 email=f"{username}@warehouse.local",
-                hashed_password=get_password_hash("worker123"),
+                hashed_password=get_password_hash(worker_id),
                 role="WORKER",
                 warehouse_id="WH01"
             )
@@ -58,7 +59,7 @@ def seed_data():
             
             worker = Worker(
                 user_id=user.id,
-                worker_id=f"W{i:04d}",
+                worker_id=worker_id,
                 name=f"Worker {i}",
                 warehouse_id="WH01",
                 skill_level=random.choice(skills),
@@ -68,6 +69,22 @@ def seed_data():
             )
             db.add(worker)
             
+    db.commit()
+    
+    # Seed WorkloadQueue
+    from app.db.models import WorkloadQueue, Task, OperationalEvent
+    if not db.query(WorkloadQueue).first():
+        db.add(WorkloadQueue(warehouse_id="WH01", process_type="RECEIVING", volume=2500))
+        db.add(WorkloadQueue(warehouse_id="WH01", process_type="PICKING", volume=8400))
+        db.add(WorkloadQueue(warehouse_id="WH01", process_type="PACKING", volume=3200))
+        
+        # Seed some active tasks
+        for i in range(12):
+            db.add(Task(warehouse_id="WH01", process_type="PICKING", priority="HIGH", status="PENDING", instructions=f"Pick order batch {i}"))
+            
+        # Seed an event
+        db.add(OperationalEvent(warehouse_id="WH01", event_type="SHIFT_START", description="Shift 1 started", details={}))
+        
     db.commit()
     db.close()
     print("Database seeded successfully.")

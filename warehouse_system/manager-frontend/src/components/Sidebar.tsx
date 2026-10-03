@@ -3,20 +3,25 @@ import {
   LayoutDashboard, 
   PackageSearch, 
   Users, 
-  Settings,
   LogOut,
   BrainCircuit,
-  MessageSquareWarning
+  MessageSquareWarning,
+  Activity,
+  Bot
 } from 'lucide-react';
 
 export default function Sidebar() {
   const location = useLocation();
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Operations', path: '/operations', icon: PackageSearch },
+    { name: 'Forecasting', path: '/forecasting', icon: Activity },
     { name: 'Workforce', path: '/workforce', icon: Users },
-    { name: 'AI Agent', path: '/agent', icon: BrainCircuit },
+    { name: 'Analytics', path: '/analytics', icon: Activity },
+    { name: 'Optimization', path: '/optimization', icon: BrainCircuit },
+    { name: 'Operations', path: '/operations', icon: PackageSearch },
+    { name: 'AI Agent', path: '/agent', icon: Bot },
     { name: 'Alerts', path: '/alerts', icon: MessageSquareWarning },
+    { name: 'Agent Audit', path: '/audit', icon: Activity },
   ];
 
   const handleLogout = () => {
@@ -26,12 +31,12 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
+    <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
       <div className="p-6">
         <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
           Warehouse AI
         </h1>
-        <p className="text-xs text-slate-400 mt-1">Manager Portal</p>
+        <p className="text-xs text-gray-500 mt-1">Manager Portal</p>
       </div>
       
       <nav className="flex-1 px-4 space-y-2">
@@ -42,7 +47,7 @@ export default function Sidebar() {
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
               location.pathname === item.path 
                 ? 'bg-blue-600/20 text-blue-400 font-medium' 
-                : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+                : 'text-gray-500 hover:bg-gray-100/50 hover:text-gray-800'
             }`}
           >
             <item.icon size={20} />
@@ -51,8 +56,8 @@ export default function Sidebar() {
         ))}
       </nav>
       
-      <div className="p-4 border-t border-slate-700">
-        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-red-400 transition-colors w-full">
+      <div className="p-4 border-t border-gray-200">
+        <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-red-400 transition-colors w-full">
           <LogOut size={20} />
           Logout
         </button>

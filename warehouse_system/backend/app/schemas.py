@@ -56,3 +56,8 @@ class MLPredictionRequest(BaseModel):
 class AgentRequest(BaseModel):
     message: str
     warehouse_id: str
+
+class WorkloadRequest(BaseModel):
+    process_type: str
+    volume: int
+    priority: str = "NORMAL"

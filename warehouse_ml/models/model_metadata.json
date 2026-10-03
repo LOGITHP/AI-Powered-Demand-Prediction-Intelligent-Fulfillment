@@ -154,5 +154,83 @@
             "PR_AUC": 0.9995855843575354
         },
         "random_seed": 42
+    },
+    {
+        "model_name": "labour_requirement_model",
+        "target": "required_workers",
+        "algorithm": "XGBoost",
+        "features_used": [
+            "workload_quantity",
+            "number_of_orders",
+            "number_of_items",
+            "number_of_skus",
+            "scheduled_workers",
+            "available_workers",
+            "average_worker_experience",
+            "average_worker_skill",
+            "equipment_available",
+            "current_queue",
+            "warehouse_utilization",
+            "historical_productivity",
+            "distance_factor",
+            "task_complexity",
+            "workload_per_worker",
+            "queue_per_worker",
+            "capacity_ratio",
+            "worker_utilization",
+            "day_of_week",
+            "is_weekend",
+            "warehouse_id",
+            "shift",
+            "process_type"
+        ],
+        "training_date": "2026-10-03T17:58:26.206542",
+        "dataset_version": "1.0",
+        "evaluation_metrics": {
+            "MAE": 0.28592512011528015,
+            "RMSE": 0.36536027910774627,
+            "R2": 0.9522380828857422
+        },
+        "random_seed": 42
+    },
+    {
+        "model_name": "delay_risk_model",
+        "target": "delay_status",
+        "algorithm": "LogisticRegression",
+        "features_used": [
+            "workload_quantity",
+            "number_of_orders",
+            "number_of_items",
+            "number_of_skus",
+            "scheduled_workers",
+            "available_workers",
+            "average_worker_experience",
+            "average_worker_skill",
+            "equipment_available",
+            "current_queue",
+            "warehouse_utilization",
+            "historical_productivity",
+            "distance_factor",
+            "task_complexity",
+            "workload_per_worker",
+            "queue_per_worker",
+            "capacity_ratio",
+            "worker_utilization",
+            "day_of_week",
+            "is_weekend",
+            "warehouse_id",
+            "shift",
+            "process_type"
+        ],
+        "training_date": "2026-10-03T17:58:44.958671",
+        "dataset_version": "1.0",
+        "evaluation_metrics": {
+            "precision": 0.9634551495016611,
+            "recall": 0.9385113268608414,
+            "F1": 0.9508196721311475,
+            "ROC_AUC": 0.9974772641219629,
+            "PR_AUC": 0.9928817684259111
+        },
+        "random_seed": 42
     }
 ]
