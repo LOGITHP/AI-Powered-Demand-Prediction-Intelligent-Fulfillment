@@ -1,0 +1,27 @@
+column_name,data_type,description,feature_or_label,allowed_values
+date,datetime,Date of operations,feature,
+warehouse_id,string,Warehouse identifier,feature,WH01-WH05
+shift,int,Work shift,feature,"1, 2, 3"
+process_type,string,Warehouse process,feature,"RECEIVING, INSPECTION, PUTAWAY, PICKING, PACKING, LOADING"
+zone_id,string,Area where process occurs,feature,
+workload_quantity,int,Primary workload volume,feature,
+number_of_orders,int,Number of orders involved,feature,
+number_of_items,int,Total items involved,feature,
+number_of_skus,int,Unique SKUs,feature,
+scheduled_workers,int,Workers scheduled for process,feature,
+absent_workers,int,Workers absent for process,feature,
+available_workers,int,Workers available for process,feature,
+average_worker_experience,float,Avg years of exp,feature,
+average_worker_skill,float,Avg skill score,feature,
+equipment_available,float,Ratio of equipment working,feature,0.0 - 1.0
+equipment_utilization,float,Usage rate of equipment,feature,0.0 - 1.0
+current_queue,int,Backlog before shift,feature,
+warehouse_utilization,float,Storage fill rate,feature,0.0 - 1.0
+historical_productivity,float,Base items/hr,feature,
+distance_factor,float,Travel distance multiplier,feature,
+task_complexity,float,Difficulty of tasks,feature,
+required_workers,int,Optimal workers needed,label,
+processing_time_minutes,int,Actual mins taken,label,
+delay_status,int,If process delayed,label,"0, 1"
+congestion_status,int,If area congested,label,"0, 1"
+worker_productivity,float,Actual throughput/hr,label,
