@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+pytest
+python-dotenv
+langgraph
+langchain
+langchain-nvidia-ai-endpoints
+PyJWT
+python-multipart

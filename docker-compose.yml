@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  head-office-agent:
+    build:
+      context: ./head_office_agent
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./head_office_agent/.env
+    volumes:
+      - ./head_office_agent/app:/app/app
+
+  warehouse-frontend:
+    build:
+      context: ./warehouse-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./warehouse-frontend/.env
+    volumes:
+      - ./warehouse-frontend/src:/app/src
+      - ./warehouse-frontend/public:/app/public
+    depends_on:
+      - head-office-agent

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from state.models import WarehouseUpdate
 from events.models import NetworkEvent
@@ -11,8 +11,11 @@ from providers.llm import LLMProvider
 from communication.interface import CommunicationAdapter, MessageType
 from agent.graph import build_head_office_graph
 from agent.nodes import AgentNodes
+from api.auth import get_current_user
+from services.nvidia_service import NvidiaService
 
 router = APIRouter()
+nvidia_service = NvidiaService()
 
 # Global dependencies
 state_manager = None 
@@ -47,7 +50,7 @@ def init_routes(sm: StateManager, eh: EventHandler, al: AuditLogger, st: Simulat
     agent_graph = build_head_office_graph(nodes)
 
 @router.post("/events")
-async def handle_event(event: NetworkEvent):
+async def handle_event(event: NetworkEvent, current_user: str = Depends(get_current_user)):
     # Setup initial state for the graph
     initial_state = {
         "request_id": event.event_id,
@@ -71,15 +74,12 @@ async def handle_event(event: NetworkEvent):
         "timestamps": {}
     }
     
-    # Run the graph
     config = {"configurable": {"thread_id": event.event_id}}
     async for output in agent_graph.astream(initial_state, config=config):
-        pass # Stream processing can be handled here if needed
+        pass
     
-    # Get final state
     state = agent_graph.get_state(config)
     
-    # Log decision if generated
     if state.values.get("recommendation"):
         rec = state.values["recommendation"]
         audit_logger.log_decision(
@@ -99,39 +99,47 @@ async def handle_event(event: NetworkEvent):
     }
 
 @router.post("/warehouse-update")
-def warehouse_update(update: WarehouseUpdate):
+def warehouse_update(update: WarehouseUpdate, current_user: str = Depends(get_current_user)):
     state_manager.process_warehouse_update(update)
     return {"status": "success"}
 
 @router.get("/network-state")
-def get_network_state():
+def get_network_state(current_user: str = Depends(get_current_user)):
     return state_manager.get_network_state()
 
-@router.post("/query", response_model=QueryResponse)
-def query_agent(request: QueryRequest):
-    # We would initialize graph with the query here
-    response = llm_provider.generate_response(request.query)
-    return QueryResponse(response=response, tools_used=[])
+@router.post("/query")
+def query_agent(request: QueryRequest, current_user: str = Depends(get_current_user)):
+    # Get current warehouse context
+    warehouse_state = state_manager.get_network_state()
+    
+    # Send to NvidiaService for reasoning
+    response = nvidia_service.generate_reasoning(warehouse_state, request.query)
+    
+    # If it failed and returned a string, wrap it. Else it is a dict with answer, severity, etc.
+    return {
+        "response": response.get("answer", ""),
+        "severity": response.get("severity", "unknown"),
+        "recommendations": response.get("recommendations", []),
+        "reasoning": response.get("reasoning", ""),
+        "tools_used": ["nvidia_service"]
+    }
 
 @router.post("/simulate")
-def simulate(request: SimulateRequest):
+def simulate(request: SimulateRequest, current_user: str = Depends(get_current_user)):
     result = simulation_tools.simulate_action(request.scenario)
     return result
 
 @router.post("/approve")
-async def approve_decision(request: ApproveDecisionRequest):
-    # Resume the interrupted graph execution
+async def approve_decision(request: ApproveDecisionRequest, current_user: str = Depends(get_current_user)):
     config = {"configurable": {"thread_id": request.decision_id}}
     
     state = agent_graph.get_state(config)
     if not state or not state.next:
         raise HTTPException(status_code=404, detail="Decision not found or not pending approval.")
         
-    # Update the state with the approval status
     new_status = "APPROVED" if request.approved else "REJECTED"
     agent_graph.update_state(config, {"approval_status": new_status})
     
-    # Continue graph execution
     async for output in agent_graph.astream(None, config=config):
         pass
         
@@ -143,9 +151,67 @@ async def approve_decision(request: ApproveDecisionRequest):
     }
 
 @router.get("/decisions")
-def get_decisions():
+def get_decisions(current_user: str = Depends(get_current_user)):
     return audit_logger.get_logs()
+
+@router.get("/dashboard/metrics")
+def get_dashboard_metrics(current_user: str = Depends(get_current_user)):
+    # Mock real calculation based on state manager
+    # In a real app this would query the DB or network state properly
+    return {
+        "ordersToday": 320,
+        "pendingOrders": 55,
+        "inboundShipments": 18,
+        "outboundShipments": 22,
+        "presentWorkers": 45,
+        "requiredWorkers": 50,
+        "utilizationPercent": 92,
+        "delayedTasks": 3
+    }
 
 @router.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {
+        "warehouse_agent": "online",
+        "database": "connected",
+        "ml_models": "ready",
+        "nvidia_api": nvidia_service.check_health()
+    }
+
+from pydantic import BaseModel
+class OrderWebhookPayload(BaseModel):
+    order_id: str
+    product: dict
+    customer: dict
+    timestamp: str
+
+@router.post("/orders/webhook")
+def receive_store_order(order: OrderWebhookPayload):
+    # Process the incoming order through the Head Agent Orchestrator
+    
+    # 1. Create Order in Central State
+    new_order = state_manager.create_order(
+        order_id=order.order_id, 
+        customer=order.customer, 
+        items=[order.product]
+    )
+    
+    # 2. Check Inventory and Allocate FC
+    allocated_wh = state_manager.check_inventory_and_allocate(order.order_id)
+    
+    # 3. Log the decision
+    if audit_logger:
+        audit_logger.log_decision(
+            event="NEW_STOREFRONT_ORDER",
+            warehouse=allocated_wh if allocated_wh else "SELLER_DIRECT",
+            tools_called=["check_inventory_and_allocate"],
+            recommendation=f"Route order {order.order_id} to {allocated_wh if allocated_wh else 'Seller'}",
+            reasoning=[f"Customer location: {order.customer.get('city')}", f"Allocation: {allocated_wh}"],
+            status="ALLOCATED" if allocated_wh else "ESCALATED"
+        )
+        
+    return {
+        "status": "success",
+        "message": f"Order {order.order_id} processed by Head Office Agent.",
+        "allocated_warehouse": allocated_wh if allocated_wh else "SELLER_DIRECT_INBOUND"
+    }
