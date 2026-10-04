@@ -105,7 +105,7 @@ async def handle_event(event: NetworkEvent):
     # Setup initial state for the graph
     initial_state = {
         "request_id": event.event_id,
-        "current_event": event.model_dump(),
+        "current_event": event.model_dump(mode="json"),
         "messages": [],
         "affected_warehouses": [],
         "observations": [],
@@ -234,7 +234,13 @@ async def approve_decision(request: ApproveDecisionRequest):
         config = {"configurable": {"thread_id": request.decision_id}}
         state = agent_graph.get_state(config)
         if state and state.next:
-            agent_graph.update_state(config, {"approval_status": new_status})
+            # Check if already processed
+            current_status = state.values.get("approval_status")
+            if current_status in ("APPROVED", "REJECTED"):
+                return {"decision_id": request.decision_id, "status": current_status, 
+                        "execution_result": state.values.get("execution_result"),
+                        "message": "Decision already processed"}
+            agent_graph.update_state(config, {"approval_status": new_status}, as_node="HumanApproval")
             async for output in agent_graph.astream(None, config=config):
                 pass
             final_state = agent_graph.get_state(config)
@@ -304,7 +310,7 @@ async def create_booking(request: BookingRequest):
             headers = {"Authorization": f"Bearer {token}"}
             resp = await client.post(
                 f"{BACKEND_URL}/api/inbound/shipments",
-                json=request.model_dump(), headers=headers,
+                json=request.model_dump(mode="json"), headers=headers,
             )
 
             if resp.status_code >= 400:

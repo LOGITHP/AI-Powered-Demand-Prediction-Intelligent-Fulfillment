@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 class AuditLogger:
     def __init__(self):
@@ -10,7 +10,7 @@ class AuditLogger:
                      decision_id: Optional[str] = None):
         log_entry = {
             "decision_id": decision_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event": event,
             "warehouse": warehouse,
             "tools_called": tools_called,
@@ -33,6 +33,6 @@ class AuditLogger:
         for entry in self.logs:
             if entry.get("decision_id") == decision_id:
                 entry["status"] = status
-                entry["resolved_at"] = datetime.utcnow().isoformat()
+                entry["resolved_at"] = datetime.now(timezone.utc).isoformat()
                 return entry
         return None

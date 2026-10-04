@@ -20,6 +20,21 @@ def verify_head_office_token(x_token: Optional[str] = Header(None)):
 def get_head_office_status():
     return {"status": "ONLINE", "connection": "STABLE"}
 
+@router.get("/metrics")
+def get_metrics(db = Depends(get_db)):
+    from sqlalchemy import func
+    from app.db.models import Order, InboundShipment, Worker, InventoryRecord
+    total_orders = db.query(Order).count()
+    pending_orders = db.query(Order).filter(Order.status == "PENDING").count()
+    active_workers = db.query(Worker).filter(Worker.status == "ON_SHIFT").count()
+    total_inventory = db.query(func.sum(InventoryRecord.quantity)).scalar() or 0
+    return {
+        "total_orders": total_orders,
+        "pending_orders": pending_orders,
+        "active_workers": active_workers,
+        "total_inventory": int(total_inventory),
+    }
+
 @router.post("/instructions", status_code=202)
 def receive_instruction(payload: HeadOfficeInstruction, token: None = Depends(verify_head_office_token), db = Depends(get_db)):
     """

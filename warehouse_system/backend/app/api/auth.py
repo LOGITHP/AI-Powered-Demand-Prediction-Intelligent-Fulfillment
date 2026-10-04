@@ -31,14 +31,16 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.username == form_data.username).first()
     
     # Auto-create hackathon test users if they don't exist
-    if not user and form_data.username in ['company', 'deliver']:
-        new_user = User(username=form_data.username, hashed_password="mock", role="WORKER", warehouse_id="WH01")
+    if not user and form_data.username in ['company', 'deliver', 'manager']:
+        from app.core.security import get_password_hash
+        role = "MANAGER" if form_data.username == "manager" else "WORKER"
+        new_user = User(username=form_data.username, hashed_password=get_password_hash(form_data.password), role=role, warehouse_id="WH01")
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
         user = new_user
         
-    if not user or (form_data.password != "password" and not verify_password(form_data.password, user.hashed_password)):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
     
     # If user is a worker, mark as present

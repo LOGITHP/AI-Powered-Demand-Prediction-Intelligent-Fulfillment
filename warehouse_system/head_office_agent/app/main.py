@@ -10,7 +10,7 @@ from events.handler import EventHandler
 from audit.logger import AuditLogger
 from tools.simulation_tools import SimulationTools
 from providers.llm import NvidiaLLMProvider
-from providers.optimization import MockOptimizationProvider
+from providers.optimization import RealOptimizationProvider
 from communication.mock_adapter import MockCommunicationAdapter
 from api.routes import router as ai_router, init_routes
 
@@ -23,7 +23,12 @@ app = FastAPI(title="Head Office System", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,7 +47,7 @@ event_handler = EventHandler(state_manager, decision_engine, audit_logger)
 simulation_tools = SimulationTools(state_manager)
 llm_provider = NvidiaLLMProvider()
 comm_adapter = MockCommunicationAdapter()
-optimizer = MockOptimizationProvider()
+optimizer = RealOptimizationProvider()
 
 # Initialize API routes with dependencies
 init_routes(

@@ -33,14 +33,14 @@ function App() {
       // Generate a random order ID
       const orderId = 'ORD-' + Math.floor(Math.random() * 100000);
       // Send booking to Head Office Agent on port 8001
-      await axios.post(`http://localhost:8001/api/v1/orders/${orderId}/allocate`, {
-        order_id: orderId,
-        destination: formData.destination || 'Customer HQ',
+      await axios.post(`http://localhost:8001/bookings`, {
+        supplier: formData.origin || 'Supplier',
+        expected_arrival: new Date(formData.date).toISOString(),
         priority: formData.type === 'express' ? 'HIGH' : 'NORMAL',
         items: [
           {
-            product_id: selectedProduct ? selectedProduct.name : 'Unknown Product',
-            quantity: formData.quantity
+            product_id: formData.productId,
+            expected_quantity: formData.quantity
           }
         ]
       })
@@ -62,7 +62,7 @@ function App() {
             <div className="bg-indigo-600 p-2 rounded-lg">
               <Hexagon className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-bold text-gray-900">FulfillIQ Booking</span>
+            <span className="text-xl font-bold text-gray-900">Logit Booking</span>
           </div>
           <nav className="flex gap-6">
             <a href="#" className="text-gray-600 hover:text-indigo-600 font-medium">Services</a>

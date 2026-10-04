@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from app.db.database import get_db
 from app.db.models import (
@@ -114,10 +114,10 @@ def list_shipments(
 
         # compute delay risk
         delay_risk = "LOW"
-        if s.status == "EXPECTED" and s.expected_arrival < datetime.utcnow():
+        if s.status == "EXPECTED" and s.expected_arrival < datetime.now(timezone.utc):
             delay_risk = "HIGH"
         elif s.status in ["RECEIVING", "INSPECTION", "PUTAWAY"]:
-            hours_in_stage = (datetime.utcnow() - (s.receiving_started_at or datetime.utcnow())).total_seconds() / 3600
+            hours_in_stage = (datetime.now(timezone.utc) - (s.receiving_started_at or datetime.now(timezone.utc))).total_seconds() / 3600
             if hours_in_stage > 4:
                 delay_risk = "HIGH"
             elif hours_in_stage > 2:
@@ -199,7 +199,7 @@ def get_shipment(shipment_id: str, db: Session = Depends(get_db), current_user=D
 def create_shipment(body: ShipmentCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     if current_user.role not in ["MANAGER", "ADMIN", "INBOUND"]:
         raise HTTPException(status_code=403, detail="Permission denied")
-    sid = f"SHP-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
+    sid = f"SHP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     s = InboundShipment(
         shipment_id=sid,
         warehouse_id=WAREHOUSE_ID,
@@ -237,7 +237,7 @@ def record_arrival(shipment_id: str, body: ArrivalRecord, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Shipment not found")
     if s.status not in ["EXPECTED", "DELAYED"]:
         raise HTTPException(status_code=400, detail=f"Cannot mark arrival from status: {s.status}")
-    s.actual_arrival = body.actual_arrival or datetime.utcnow()
+    s.actual_arrival = body.actual_arrival or datetime.now(timezone.utc)
     s.status = "ARRIVED"
     s.notes = body.notes
     # check for delay
@@ -266,7 +266,7 @@ def start_receiving(shipment_id: str, db: Session = Depends(get_db), current_use
     if s.status != "ARRIVED":
         raise HTTPException(status_code=400, detail=f"Shipment must be ARRIVED to start receiving. Current: {s.status}")
     s.status = "RECEIVING"
-    s.receiving_started_at = datetime.utcnow()
+    s.receiving_started_at = datetime.now(timezone.utc)
     s.assigned_worker_id = current_user.id
     emit_event(db, "INBOUND_RECEIVING_STARTED", f"Receiving started for {shipment_id}", shipment_id, {}, current_user.id)
     db.commit()
@@ -310,9 +310,9 @@ def complete_receiving(shipment_id: str, body: ReceivingComplete, db: Session = 
 
     s.received_items = total_received
     s.damaged_items = total_damaged
-    s.receiving_completed_at = datetime.utcnow()
+    s.receiving_completed_at = datetime.now(timezone.utc)
     s.status = "INSPECTION"
-    s.inspection_started_at = datetime.utcnow()
+    s.inspection_started_at = datetime.now(timezone.utc)
 
     cycle_time = (s.receiving_completed_at - s.receiving_started_at).total_seconds() / 60.0
     emit_event(db, "INBOUND_RECEIVING_COMPLETED", f"Receiving completed for {shipment_id}. {total_received} units received, {total_damaged} damaged.",
@@ -350,9 +350,9 @@ def complete_inspection(shipment_id: str, body: InspectionComplete, db: Session 
             )
             db.add(issue)
 
-    s.inspection_completed_at = datetime.utcnow()
+    s.inspection_completed_at = datetime.now(timezone.utc)
     s.status = "PUTAWAY"
-    s.putaway_started_at = datetime.utcnow()
+    s.putaway_started_at = datetime.now(timezone.utc)
 
     cycle_time = (s.inspection_completed_at - s.inspection_started_at).total_seconds() / 60.0
     emit_event(db, "INBOUND_INSPECTION_COMPLETED", f"Inspection complete for {shipment_id}.", shipment_id, {"cycle_time_minutes": cycle_time}, current_user.id)
@@ -421,9 +421,9 @@ def complete_putaway(shipment_id: str, body: PutawayComplete, db: Session = Depe
         item.putaway_location_id = assign.location_id
         item.putaway_status = "COMPLETED"
 
-    s.putaway_completed_at = datetime.utcnow()
+    s.putaway_completed_at = datetime.now(timezone.utc)
     s.status = "COMPLETED"
-    s.completed_at = datetime.utcnow()
+    s.completed_at = datetime.now(timezone.utc)
 
     putaway_cycle = (s.putaway_completed_at - s.putaway_started_at).total_seconds() / 60.0
     emit_event(db, "INBOUND_PUTAWAY_COMPLETED", f"Putaway complete for {shipment_id}.", shipment_id, {"cycle_time_minutes": putaway_cycle}, current_user.id)
@@ -485,7 +485,7 @@ def report_issue(shipment_id: str, body: IssueReport, db: Session = Depends(get_
 
 @router.get("/kpis")
 def get_inbound_kpis(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     total_today = db.query(InboundShipment).filter(InboundShipment.warehouse_id == WAREHOUSE_ID, InboundShipment.created_at >= today_start).count()

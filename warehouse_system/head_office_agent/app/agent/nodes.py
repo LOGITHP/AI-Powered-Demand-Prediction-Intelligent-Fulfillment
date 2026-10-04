@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from agent.state import AgentState
 from state.manager import StateManager
@@ -27,12 +27,12 @@ class AgentNodes:
         self.optimizer = optimizer
 
     def receive_request(self, state: AgentState) -> AgentState:
-        state["timestamps"]["receive_request"] = datetime.utcnow().isoformat()
+        state["timestamps"]["receive_request"] = datetime.now(timezone.utc).isoformat()
         return state
 
     def observe_network(self, state: AgentState) -> AgentState:
         state["network_state"] = self.network_tools.get_network_state()
-        state["timestamps"]["observe_network"] = datetime.utcnow().isoformat()
+        state["timestamps"]["observe_network"] = datetime.now(timezone.utc).isoformat()
         return state
 
     def analyze_situation(self, state: AgentState) -> AgentState:
@@ -102,7 +102,7 @@ class AgentNodes:
 
         state["identified_problems"] = problems
         state["resource_shortages"] = shortages
-        state["timestamps"]["analyze_situation"] = datetime.utcnow().isoformat()
+        state["timestamps"]["analyze_situation"] = datetime.now(timezone.utc).isoformat()
         return state
 
     def determine_required_tools(self, state: AgentState) -> AgentState:

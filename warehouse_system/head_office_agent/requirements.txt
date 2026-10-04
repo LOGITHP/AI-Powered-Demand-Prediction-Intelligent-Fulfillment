@@ -3,6 +3,7 @@ uvicorn
 pydantic
 python-dotenv
 pytest
+pytest-asyncio
 requests
 langgraph
 langchain-nvidia-ai-endpoints

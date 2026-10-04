@@ -8,7 +8,7 @@ from communication.mock_adapter import MockCommunicationAdapter
 from tools.resource_tools import ResourceTools
 from tools.network_tools import NetworkTools
 from providers.llm import MockLLMProvider
-from providers.optimization import MockOptimizationProvider
+from providers.optimization import RealOptimizationProvider
 from agent.nodes import AgentNodes
 from agent.graph import build_head_office_graph
 
@@ -20,7 +20,7 @@ def setup_agent():
     resource_tools = ResourceTools(state_manager)
     network_tools = NetworkTools(state_manager, comm_adapter)
     llm = MockLLMProvider()
-    optimizer = MockOptimizationProvider()
+    optimizer = RealOptimizationProvider()
     
     nodes = AgentNodes(
         state_manager=state_manager,
@@ -60,7 +60,7 @@ async def test_worker_shortage_scenario(setup_agent):
     
     initial_state = {
         "request_id": "req-1",
-        "current_event": {"event_type": "WORKER_SHORTAGE", "warehouse_id": "WH-A"},
+        "current_event": {"type": "WORKER_SHORTAGE", "warehouse_id": "WH-A"},
         "messages": [],
         "affected_warehouses": [],
         "observations": [],
@@ -158,7 +158,7 @@ async def test_simulation_scenario(setup_agent):
     assert state.values["recommendation"] is not None
     assert state.values["recommendation"]["type"] == "SIMULATION"
     assert state.values["recommendation"]["status"] == "SIMULATION"
-    assert "Simulation complete" in state.values["final_response"]
+    assert "Simulated" in state.values["final_response"]
 
 @pytest.mark.asyncio
 async def test_inquiry_scenario(setup_agent):

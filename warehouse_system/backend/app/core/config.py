@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Warehouse Operations System"
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://warehouse_user:warehouse_password@localhost:5432/warehouse")
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey_warehouse_management_system")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-only-" + "x" * 40)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440 # 24 hours
     
