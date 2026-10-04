@@ -39,18 +39,13 @@ class MockLLMProvider(LLMProvider):
 
 class NvidiaLLMProvider(LLMProvider):
     def __init__(self):
-        from langchain_nvidia_ai_endpoints import ChatNVIDIA
-        api_key = os.environ.get("NVIDIA_API_KEY")
-        base_url = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-        model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct")
+        from langchain_google_genai import ChatGoogleGenAI
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        model = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
         
-        if not api_key:
-            raise ValueError("NVIDIA_API_KEY environment variable is missing")
-            
-        self.llm = ChatNVIDIA(
+        self.llm = ChatGoogleGenAI(
             model=model,
-            api_key=api_key,
-            base_url=base_url,
+            google_api_key=api_key,
             temperature=0.2
         )
 

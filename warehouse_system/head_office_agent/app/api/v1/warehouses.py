@@ -33,3 +33,19 @@ def get_warehouse_details(warehouse_id: str, db: Session = Depends(get_db)):
             "used_capacity": agent.capacity[0].used_capacity if agent.capacity else 0,
         }
     }
+
+@router.get("/{warehouse_id}/operations")
+def get_warehouse_operations(warehouse_id: str):
+    import requests
+    import os
+    backend_url = os.environ.get("WAREHOUSE_BACKEND_URL", "http://backend:8000")
+    if warehouse_id == "WH-002":
+        backend_url = os.environ.get("WAREHOUSE2_BACKEND_URL", "http://backend-2:8000")
+    
+    try:
+        resp = requests.get(f"{backend_url}/api/head-office/operations", timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+        return []
+    except Exception as e:
+        return []

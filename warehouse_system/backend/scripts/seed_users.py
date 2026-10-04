@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.db.database import engine, Base, SessionLocal
 from app.db.models import User, Worker
 from app.core.security import get_password_hash
+from app.core.config import settings
 
 def seed_data():
     Base.metadata.create_all(bind=engine)
@@ -21,19 +22,19 @@ def seed_data():
             email="manager@warehouse.local",
             hashed_password=get_password_hash("manager123"),
             role="MANAGER",
-            warehouse_id="WH01"
+            warehouse_id=settings.WAREHOUSE_ID
         )
         db.add(manager)
 
     # Create Inbound/Outbound
     inbound = db.query(User).filter(User.username == "inbound").first()
     if not inbound:
-        inbound = User(username="inbound", email="inbound@warehouse.local", hashed_password=get_password_hash("inbound123"), role="INBOUND", warehouse_id="WH01")
+        inbound = User(username="inbound", email="inbound@warehouse.local", hashed_password=get_password_hash("inbound123"), role="INBOUND", warehouse_id=settings.WAREHOUSE_ID)
         db.add(inbound)
 
     outbound = db.query(User).filter(User.username == "outbound").first()
     if not outbound:
-        outbound = User(username="outbound", email="outbound@warehouse.local", hashed_password=get_password_hash("outbound123"), role="OUTBOUND", warehouse_id="WH01")
+        outbound = User(username="outbound", email="outbound@warehouse.local", hashed_password=get_password_hash("outbound123"), role="OUTBOUND", warehouse_id=settings.WAREHOUSE_ID)
         db.add(outbound)
         
     db.commit()
@@ -52,7 +53,7 @@ def seed_data():
                 email=f"{username}@warehouse.local",
                 hashed_password=get_password_hash(worker_id),
                 role="WORKER",
-                warehouse_id="WH01"
+                warehouse_id=settings.WAREHOUSE_ID
             )
             db.add(user)
             db.flush() # get user.id
@@ -61,7 +62,7 @@ def seed_data():
                 user_id=user.id,
                 worker_id=worker_id,
                 name=f"Worker {i}",
-                warehouse_id="WH01",
+                warehouse_id=settings.WAREHOUSE_ID,
                 skill_level=random.choice(skills),
                 experience_years=round(random.uniform(0.5, 10.0), 1),
                 assigned_zone=random.choice(zones),
@@ -74,18 +75,18 @@ def seed_data():
     # Seed WorkloadQueue
     from app.db.models import WorkloadQueue, Task, OperationalEvent
     if not db.query(WorkloadQueue).first():
-        db.add(WorkloadQueue(warehouse_id="WH01", process_type="RECEIVING", volume=2500))
-        db.add(WorkloadQueue(warehouse_id="WH01", process_type="PICKING", volume=8400))
-        db.add(WorkloadQueue(warehouse_id="WH01", process_type="PACKING", volume=3200))
+        db.add(WorkloadQueue(warehouse_id=settings.WAREHOUSE_ID, process_type="RECEIVING", volume=2500))
+        db.add(WorkloadQueue(warehouse_id=settings.WAREHOUSE_ID, process_type="PICKING", volume=8400))
+        db.add(WorkloadQueue(warehouse_id=settings.WAREHOUSE_ID, process_type="PACKING", volume=3200))
         
         # Seed some active tasks
         for i in range(12):
-            db.add(Task(warehouse_id="WH01", process_type="PICKING", zone="PICKING_A",
+            db.add(Task(warehouse_id=settings.WAREHOUSE_ID, process_type="PICKING", zone="PICKING_A",
                         priority="HIGH", status="PENDING",
                         instructions=f"Pick order batch {i}"))
             
         # Seed an event
-        db.add(OperationalEvent(warehouse_id="WH01", event_type="SHIFT_START", description="Shift 1 started", details={}))
+        db.add(OperationalEvent(warehouse_id=settings.WAREHOUSE_ID, event_type="SHIFT_START", description="Shift 1 started", details={}))
 
     db.commit()
 
@@ -96,8 +97,8 @@ def seed_data():
         "PICKING": 60.0, "PACKING": 70.0, "DISPATCH": 110.0,
     }
     for ptype, uph in standards.items():
-        if not db.query(LaborStandard).filter_by(warehouse_id="WH01", process_type=ptype).first():
-            db.add(LaborStandard(warehouse_id="WH01", process_type=ptype, units_per_hour=uph))
+        if not db.query(LaborStandard).filter_by(warehouse_id=settings.WAREHOUSE_ID, process_type=ptype).first():
+            db.add(LaborStandard(warehouse_id=settings.WAREHOUSE_ID, process_type=ptype, units_per_hour=uph))
 
     # Mark a pool of workers on-shift so the assignment engine has candidates
     shift_workers = db.query(Worker).filter(Worker.shift == 1, Worker.status != "ON_SHIFT").limit(12).all()
@@ -119,7 +120,7 @@ def seed_data():
                 weekend_drop = 0.6 if day.weekday() >= 5 else 1.0
                 noise = random.uniform(0.9, 1.1)
                 db.add(VolumeHistory(
-                    warehouse_id="WH01", process_type=ptype,
+                    warehouse_id=settings.WAREHOUSE_ID, process_type=ptype,
                     date=datetime.combine(day, datetime.min.time()),
                     volume=round(avg * weekend_drop * noise, 1),
                 ))

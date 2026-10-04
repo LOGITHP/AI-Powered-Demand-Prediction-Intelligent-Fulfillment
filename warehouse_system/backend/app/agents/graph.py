@@ -4,14 +4,15 @@ import threading
 
 from langchain_core.messages import SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, END
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_google_genai import ChatGoogleGenAI
 
 from app.agents.state import WarehouseAgentState
 from app.agents.tools import (
     get_warehouse_status, get_worker_status, get_outbound_status, get_inbound_status,
     run_labour_prediction, run_delay_prediction,
     recommend_worker_redistribution, request_manager_approval,
-    send_worker_instruction, draft_notification, propose_reassignment
+    send_worker_instruction, draft_notification, propose_reassignment,
+    add_new_employee
 )
 from app.core.config import settings
 
@@ -21,24 +22,24 @@ TOOLS = [
     get_warehouse_status, get_worker_status, get_outbound_status, get_inbound_status,
     run_labour_prediction, run_delay_prediction,
     recommend_worker_redistribution, request_manager_approval,
-    send_worker_instruction, draft_notification, propose_reassignment
+    send_worker_instruction, draft_notification, propose_reassignment, add_new_employee
 ]
 
 TOOL_REGISTRY = {t.name: t for t in TOOLS}
 
-# ChatNVIDIA clients are thread-safe for invoke; cache one per process instead
+# ChatGoogleGenAI clients are thread-safe for invoke; cache one per process instead
 # of rebuilding (with a new HTTPS session) inside every graph node.
 _llm_cache = {}
 _llm_lock = threading.Lock()
 
 
 def load_nvidia_llm(bind_tools=False):
-    if not settings.NVIDIA_API_KEY:
-        raise ValueError("NVIDIA_API_KEY is not set.")
+    import os
+    api_key = os.environ.get("GOOGLE_API_KEY")
     key = "bound" if bind_tools else "plain"
     with _llm_lock:
         if key not in _llm_cache:
-            llm = ChatNVIDIA(model=settings.NVIDIA_MODEL, api_key=settings.NVIDIA_API_KEY)
+            llm = ChatGoogleGenAI(model="gemini-1.5-flash", google_api_key=api_key)
             if bind_tools:
                 llm = llm.bind_tools(TOOLS)
             _llm_cache[key] = llm
@@ -56,6 +57,7 @@ def understand_request(state: WarehouseAgentState):
     prompt = SystemMessage(content=(
         "You are the Warehouse Operations Agent. Understand the user's request. "
         "When instructing workers (e.g., via send_worker_instruction), you MUST include a detailed, step-by-step list of the work they must do in that day. Never just say 'assigned'. "
+        "You have tools to check ML predictions and add new employees (add_new_employee). If the user asks you to add an employee and see how it affects ML predictions, add the employee first, then run the ML prediction tools. "
         "Output a single brief thought."
     ))
     response = llm.invoke([prompt] + messages[-1:])
@@ -105,6 +107,7 @@ def generate_recommendation(state: WarehouseAgentState):
     system_prompt = SystemMessage(content="""You are the Warehouse Operations Agent.
 Use the tool results to answer. If a tool returned an error, say so and answer with what you have.
 When instructing workers (e.g., via send_worker_instruction), you MUST include a detailed, step-by-step list of the work they must do in that day. Never just say 'assigned' or 'called'.
+If the user asks you to add an employee and check ML predictions, remember that average_worker_skill and average_worker_experience drive the ML output. Add the employee first, then re-run the ML predictions.
 Format response with STATUS, EVIDENCE, ISSUE, IMPACT, RECOMMENDATION, ACTION if analyzing operations.""")
     response = llm.invoke([system_prompt] + state["messages"])
     return {"messages": [response]}

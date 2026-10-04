@@ -102,6 +102,70 @@ def build_head_office_tools(state_manager: StateManager, audit_logger: AuditLogg
                         "on the AI Agent page before any workers move."),
         })
 
+    
+    @tool
+    def check_fc_inventory(fc_id: str, product_id: str) -> str:
+        """Check the available inventory of a product at a specific Fulfillment Center."""
+        from database.core import SessionLocal
+        from models.core import FCInventory
+        db = SessionLocal()
+        try:
+            item = db.query(FCInventory).filter(FCInventory.fc_id == fc_id, FCInventory.product_id == product_id).first()
+            if not item:
+                return json.dumps({"status": "error", "message": "Product not found in FC"})
+            return json.dumps({
+                "fc_id": fc_id,
+                "product_id": product_id,
+                "available_quantity": item.available_quantity,
+                "reserved_quantity": item.reserved_quantity,
+                "incoming_quantity": item.incoming_quantity
+            })
+        finally:
+            db.close()
+    @tool
+    def instruct_warehouse(warehouse_id: str, order_id: str, product_id: str, quantity: int, priority: str = "HIGH", operation: str = "PICK_PACK_SHIP") -> str:
+        """Send an instruction to a specific warehouse or fulfillment center to process an order.
+        You must provide the order_id, product_id, and quantity.
+        """
+        import requests
+        import uuid
+        import os
+        backend_url = os.environ.get("WAREHOUSE_BACKEND_URL", "http://backend:8000")
+        if warehouse_id == "WH-002":
+            backend_url = os.environ.get("WAREHOUSE2_BACKEND_URL", "http://backend-2:8000")
+            
+        try:
+            payload = {
+                "instruction_id": f"INST-{uuid.uuid4().hex[:6].upper()}",
+                "order_id": order_id,
+                "items": [{"sku_id": product_id, "quantity": quantity}],
+                "fc": "FC-CHENNAI-001",
+                "priority": priority,
+                "sla_hours": 24,
+                "required_operation": operation
+            }
+
+            resp = requests.post(f"{backend_url}/api/head-office/instructions", headers={"x-token": "supersecret-headoffice-token"}, json=payload, timeout=5)
+            if resp.status_code == 202 or resp.status_code == 200:
+                # Update the order status in the DB
+                from database.core import SessionLocal
+                from models.core import Order
+                db = SessionLocal()
+                try:
+                    order_obj = db.query(Order).filter(Order.order_id == order_id).first()
+                    if order_obj:
+                        order_obj.status = "ALLOCATED"
+                        db.commit()
+                finally:
+                    db.close()
+                return json.dumps({"status": "success", "message": f"Instruction sent to {warehouse_id} for order {order_id}"})
+            return json.dumps({"status": "error", "message": f"Failed to send to warehouse: {resp.text}"})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": f"Connection error: {str(e)}"})
+            
     return [get_network_state, find_worker_shortages, find_worker_surpluses,
             compare_warehouses, get_active_events, simulate_demand_change,
-            request_worker_allocation]
+            request_worker_allocation, check_fc_inventory, instruct_warehouse]
+
+
+

@@ -10,7 +10,6 @@ bcrypt==3.2.2
 python-multipart==0.0.6
 websockets==12.0
 langgraph
-langchain-nvidia-ai-endpoints
 langchain-core
 langchain
 pandas
@@ -21,3 +20,5 @@ joblib==1.3.2
 httpx
 requests
 scipy
+
+langchain-google-genai

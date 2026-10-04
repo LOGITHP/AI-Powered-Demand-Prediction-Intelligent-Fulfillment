@@ -86,3 +86,14 @@ class AgentCommand(Base):
     payload = Column(JSON)
     status = Column(String) # PENDING, SENT, ACCEPTED, REJECTED, COMPLETED
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class FCInventory(Base):
+    __tablename__ = "ho_fc_inventory"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    fc_id = Column(String, index=True)
+    product_id = Column(String, index=True)
+    available_quantity = Column(Integer, default=0)
+    reserved_quantity = Column(Integer, default=0)
+    incoming_quantity = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

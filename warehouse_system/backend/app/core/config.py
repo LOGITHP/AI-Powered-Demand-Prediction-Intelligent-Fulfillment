@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY", "")
     NVIDIA_MODEL: str = os.getenv("NVIDIA_MODEL", "meta/llama3-70b-instruct")
     HEAD_OFFICE_BASE_URL: str = os.getenv("HEAD_OFFICE_BASE_URL", "http://localhost:8001")
+    WAREHOUSE_ID: str = os.getenv("WAREHOUSE_ID", "WH-001")
     
     ML_MODELS_PATH: str = os.getenv("ML_MODELS_PATH", "/app/models")
 
 settings = Settings()
+

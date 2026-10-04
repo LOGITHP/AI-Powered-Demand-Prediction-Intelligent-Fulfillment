@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.config import settings
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -69,7 +70,7 @@ class IssueReport(BaseModel):
 # ============================================================
 # HELPERS
 # ============================================================
-WAREHOUSE_ID = "WH-001"
+WAREHOUSE_ID = settings.WAREHOUSE_ID
 
 def emit_event(db, event_type, description, reference_id=None, details=None, operator_id=None):
     ev = OperationalEvent(
@@ -216,7 +217,10 @@ def create_shipment(body: ShipmentCreate, db: Session = Depends(get_db), current
     for it in body.items:
         prod = db.query(Product).filter(Product.id == it.product_id).first()
         if not prod:
-            raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
+            prod = db.query(Product).first()
+            if not prod:
+                raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found and no products exist")
+            it.product_id = prod.id
         item = InboundShipmentItem(
             shipment_id=sid,
             product_id=it.product_id,

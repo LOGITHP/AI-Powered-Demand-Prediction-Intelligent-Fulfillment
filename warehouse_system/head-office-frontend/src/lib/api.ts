@@ -3,7 +3,7 @@ import axios from 'axios';
 // Head Office agent service. Outside docker-compose it runs on :8001
 // (compose maps 8001 -> container 8000).
 const api = axios.create({
-  baseURL: import.meta.env.VITE_HO_API_URL || 'http://localhost:8001',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8001',
   headers: { 'Content-Type': 'application/json' },
   timeout: 60000, // LLM tool-calling rounds can take a while
 });

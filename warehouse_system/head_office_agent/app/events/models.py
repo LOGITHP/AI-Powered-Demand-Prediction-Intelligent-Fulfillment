@@ -12,6 +12,7 @@ class EventType(Enum):
     ANOMALY_DETECTED = "ANOMALY_DETECTED"
     EQUIPMENT_FAILURE = "EQUIPMENT_FAILURE"
     ORDER_SURGE = "ORDER_SURGE"
+    CUSTOMER_ORDER = "CUSTOMER_ORDER"
 
 class NetworkEvent(BaseModel):
     event_id: str
@@ -20,3 +21,4 @@ class NetworkEvent(BaseModel):
     timestamp: datetime
     severity: str
     payload: Dict[str, Any]
+

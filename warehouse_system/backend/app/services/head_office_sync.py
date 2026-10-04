@@ -64,6 +64,16 @@ def _collect_snapshot(db: Session, warehouse_id: str) -> dict:
         utilization = min(0.95, round(total_volume / 5000, 3)) if total_volume else 0.2
 
     workload = total_volume + active_inbound * 50
+    workers_data = db.query(Worker).filter(Worker.warehouse_id == warehouse_id).all()
+    avg_skill = 1.1
+    avg_exp = 3.5
+    if workers_data:
+        skill_map = {"BEGINNER": 0.8, "INTERMEDIATE": 1.1, "EXPERT": 1.5}
+        total_skill = sum(skill_map.get(w.skill_level.upper(), 1.0) if w.skill_level else 1.0 for w in workers_data)
+        total_exp = sum(w.experience_years or 0.0 for w in workers_data)
+        avg_skill = total_skill / len(workers_data)
+        avg_exp = total_exp / len(workers_data)
+
     try:
         ml_req = MLPredictionRequest(
             warehouse_id=warehouse_id, shift=1, process_type="PICKING",
@@ -71,7 +81,7 @@ def _collect_snapshot(db: Session, warehouse_id: str) -> dict:
             number_of_orders=max(1, active_inbound), number_of_items=workload or 100,
             number_of_skus=max(1, int((workload or 100) * 0.1)),
             scheduled_workers=max(1, scheduled), available_workers=max(1, present),
-            average_worker_experience=3.5, average_worker_skill=1.1,
+            average_worker_experience=avg_exp, average_worker_skill=avg_skill,
             equipment_available=0.9, current_queue=total_volume,
             warehouse_utilization=utilization, historical_productivity=400.0,
             distance_factor=1.0, task_complexity=1.0,
@@ -104,7 +114,7 @@ def _collect_snapshot(db: Session, warehouse_id: str) -> dict:
     }
 
 
-def sync_warehouse_status_to_head_office(db: Session, warehouse_id: str = "WH-001") -> bool:
+def sync_warehouse_status_to_head_office(db: Session, warehouse_id: str = settings.WAREHOUSE_ID) -> bool:
     base_url = settings.HEAD_OFFICE_BASE_URL.rstrip("/")
     try:
         payload = _collect_snapshot(db, warehouse_id)

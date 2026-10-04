@@ -16,7 +16,7 @@ export default function Sidebar() {
           <div className="bg-indigo-600 p-2 rounded-lg">
             <Hexagon className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Logit HQ</h1>
+          <h1 className="text-xl font-bold text-gray-900">Head Office</h1>
         </div>
 
         <nav className="space-y-1">

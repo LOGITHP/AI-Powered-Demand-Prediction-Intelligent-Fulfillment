@@ -60,7 +60,7 @@ function App() {
             <div className="bg-indigo-600 p-2 rounded-lg">
               <Hexagon className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-bold text-gray-900">Logit Booking</span>
+            <span className="text-xl font-bold text-gray-900">Booking</span>
           </div>
           <nav className="flex gap-6">
             <a href="#" className="text-gray-600 hover:text-indigo-600 font-medium">Services</a>
@@ -73,9 +73,9 @@ function App() {
       <main className="max-w-3xl mx-auto px-4 py-12">
         {step === 1 && (
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-            <div className="bg-indigo-600 px-8 py-10 text-white text-center">
-              <h1 className="text-3xl font-bold mb-2">Book Your Products</h1>
-              <p className="text-indigo-100">Intelligently routed by our Head Office Agent across the network.</p>
+            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-8 py-12 text-white text-center">
+              <h1 className="text-4xl font-extrabold mb-3 tracking-tight">Book Your Products</h1>
+              <p className="text-indigo-100 text-lg">Intelligently routed by our AI-Powered Head Office Agent.</p>
             </div>
             
             <div className="p-8">

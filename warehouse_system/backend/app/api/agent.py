@@ -115,9 +115,8 @@ def chat_with_agent(request: AgentRequest, current_user=Depends(get_current_user
         "Action approved. Instructions sent to worker terminals W0001, W0002, W0003.",
         "Scenario analyzed. A 10% increase in peak volume will require 15 additional workers in the Picking zone."
     ]
-    import random
-
-    if not settings.NVIDIA_API_KEY:
+    import os
+    if not os.environ.get("GOOGLE_API_KEY"):
         response = f"[Demo Mode - No API Key] {random.choice(mock_responses)}"
         db = SessionLocal()
         try:

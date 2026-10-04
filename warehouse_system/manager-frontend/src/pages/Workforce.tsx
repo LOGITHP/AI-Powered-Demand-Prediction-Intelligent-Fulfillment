@@ -19,6 +19,46 @@ export default function Workforce() {
     <div className="space-y-8 max-w-6xl mx-auto text-gray-900">
       <h1 className="text-3xl font-bold">Smart Workforce Planning</h1>
 
+      {/* Add Employee Form */}
+      <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
+        <h2 className="text-xl font-bold mb-4 text-purple-900">ADD NEW EMPLOYEE</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          try {
+            await api.post('/workers/', {
+              name: fd.get('name'),
+              skill_level: fd.get('skill_level'),
+              experience_years: parseFloat(fd.get('experience_years') as string),
+              assigned_zone: 'A',
+              shift: 1
+            });
+            alert('Employee added successfully! ML predictions will now update based on new skill average.');
+            e.currentTarget.reset();
+          } catch(err) {
+            alert('Failed to add employee');
+          }
+        }} className="flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+            <input name="name" type="text" required className="border p-2 rounded" placeholder="John Doe" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Skill Level</label>
+            <select name="skill_level" className="border p-2 rounded">
+              <option value="BEGINNER">BEGINNER</option>
+              <option value="INTERMEDIATE">INTERMEDIATE</option>
+              <option value="EXPERT">EXPERT</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Experience (Years)</label>
+            <input name="experience_years" type="number" step="0.1" required className="border p-2 rounded" placeholder="1.5" />
+          </div>
+          <button type="submit" className="bg-purple-600 text-white px-4 py-2 rounded font-bold hover:bg-purple-700">Add Employee</button>
+        </form>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* SECTION 1 */}
         <div className="bg-white p-6 rounded-xl shadow border border-gray-200">

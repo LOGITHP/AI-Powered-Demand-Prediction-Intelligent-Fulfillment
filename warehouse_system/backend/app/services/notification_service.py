@@ -147,7 +147,7 @@ def tick_escalations(db: Session) -> dict:
                 if not existing:
                     action = AgentAction(
                         agent_name="MonitoringAgent",
-                        warehouse_id=warehouse_id or "WH-001",
+                        warehouse_id=warehouse_id or settings.WAREHOUSE_ID,
                         trigger=f"Escalated unacknowledged notification #{n.id}",
                         tool_called="propose_reassignment",
                         action_type="REASSIGN_TASK",

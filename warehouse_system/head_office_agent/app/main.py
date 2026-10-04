@@ -15,7 +15,7 @@ from communication.mock_adapter import MockCommunicationAdapter
 from api.routes import router as ai_router, init_routes
 
 # Import API routes
-from api.v1 import agents, orders, warehouses, inventory
+from api.v1 import agents, orders, warehouses, inventory, fc_inventory
 
 load_dotenv()
 
@@ -27,6 +27,10 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005",
+        "http://localhost:3006",
         "http://localhost:5173"
     ],
     allow_credentials=True,
@@ -68,6 +72,7 @@ app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agents"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
 app.include_router(warehouses.router, prefix="/api/v1/warehouses", tags=["Warehouses"])
 app.include_router(inventory.router, prefix="/api/v1/inventory", tags=["Inventory"])
+app.include_router(fc_inventory.router, prefix="/api/v1/fulfillment-center/inventory", tags=["Fulfillment Center"])
 
 @app.on_event("startup")
 def startup_event():

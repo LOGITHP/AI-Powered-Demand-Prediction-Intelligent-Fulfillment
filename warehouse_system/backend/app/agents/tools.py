@@ -50,30 +50,68 @@ def get_inbound_status(warehouse_id: str) -> str:
 @tool
 def run_labour_prediction(warehouse_id: str, workload: int, available_workers: int) -> str:
     """Run the ML model to predict required workers."""
-    req = MLPredictionRequest(
-        warehouse_id=warehouse_id, shift=1, process_type="PICKING", workload_quantity=workload,
-        number_of_orders=int(workload/5), number_of_items=workload, number_of_skus=int(workload*0.1),
-        scheduled_workers=available_workers, available_workers=available_workers,
-        average_worker_experience=3.5, average_worker_skill=1.1, equipment_available=0.9,
-        current_queue=1200, warehouse_utilization=0.85, historical_productivity=400.0,
-        distance_factor=1.0, task_complexity=1.0
-    )
-    pred = predict_labour_requirement(req)
-    return json.dumps({"required_workers": pred})
+    db = SessionLocal()
+    try:
+        workers = db.query(Worker).filter(Worker.warehouse_id == warehouse_id).all()
+        exp_sum = 0
+        skill_sum = 0
+        count = len(workers)
+        if count > 0:
+            for w in workers:
+                exp_sum += (w.experience_years or 0)
+                skill_map = {"Beginner": 1.0, "Intermediate": 2.0, "Expert": 3.0}
+                skill_sum += skill_map.get(w.skill_level, 1.5)
+            avg_exp = exp_sum / count
+            avg_skill = skill_sum / count
+        else:
+            avg_exp = 3.5
+            avg_skill = 1.1
+
+        req = MLPredictionRequest(
+            warehouse_id=warehouse_id, shift=1, process_type="PICKING", workload_quantity=workload,
+            number_of_orders=int(workload/5), number_of_items=workload, number_of_skus=int(workload*0.1),
+            scheduled_workers=available_workers, available_workers=available_workers,
+            average_worker_experience=avg_exp, average_worker_skill=avg_skill, equipment_available=0.9,
+            current_queue=1200, warehouse_utilization=0.85, historical_productivity=400.0,
+            distance_factor=1.0, task_complexity=1.0
+        )
+        pred = predict_labour_requirement(req)
+        return json.dumps({"required_workers": pred, "avg_exp": round(avg_exp, 2), "avg_skill": round(avg_skill, 2)})
+    finally:
+        db.close()
 
 @tool
 def run_delay_prediction(warehouse_id: str, workload: int, available_workers: int) -> str:
     """Run the ML model to predict delay risk."""
-    req = MLPredictionRequest(
-        warehouse_id=warehouse_id, shift=1, process_type="PICKING", workload_quantity=workload,
-        number_of_orders=int(workload/5), number_of_items=workload, number_of_skus=int(workload*0.1),
-        scheduled_workers=available_workers, available_workers=available_workers,
-        average_worker_experience=3.5, average_worker_skill=1.1, equipment_available=0.9,
-        current_queue=1200, warehouse_utilization=0.85, historical_productivity=400.0,
-        distance_factor=1.0, task_complexity=1.0
-    )
-    status, prob = predict_delay_probability(req)
-    return json.dumps({"delay_probability": prob, "status": status})
+    db = SessionLocal()
+    try:
+        workers = db.query(Worker).filter(Worker.warehouse_id == warehouse_id).all()
+        exp_sum = 0
+        skill_sum = 0
+        count = len(workers)
+        if count > 0:
+            for w in workers:
+                exp_sum += (w.experience_years or 0)
+                skill_map = {"Beginner": 1.0, "Intermediate": 2.0, "Expert": 3.0}
+                skill_sum += skill_map.get(w.skill_level, 1.5)
+            avg_exp = exp_sum / count
+            avg_skill = skill_sum / count
+        else:
+            avg_exp = 3.5
+            avg_skill = 1.1
+
+        req = MLPredictionRequest(
+            warehouse_id=warehouse_id, shift=1, process_type="PICKING", workload_quantity=workload,
+            number_of_orders=int(workload/5), number_of_items=workload, number_of_skus=int(workload*0.1),
+            scheduled_workers=available_workers, available_workers=available_workers,
+            average_worker_experience=avg_exp, average_worker_skill=avg_skill, equipment_available=0.9,
+            current_queue=1200, warehouse_utilization=0.85, historical_productivity=400.0,
+            distance_factor=1.0, task_complexity=1.0
+        )
+        status, prob = predict_delay_probability(req)
+        return json.dumps({"delay_probability": prob, "status": status, "avg_exp": round(avg_exp, 2), "avg_skill": round(avg_skill, 2)})
+    finally:
+        db.close()
 
 @tool
 def recommend_worker_redistribution(warehouse_id: str, shortage: int, from_zone: str, to_zone: str) -> str:
@@ -162,5 +200,49 @@ def propose_reassignment(warehouse_id: str, task_id: int, new_worker_id: str) ->
         db.add(action)
         db.commit()
         return json.dumps({"status": "Proposal submitted to Action Engine for Manager Approval.", "action_id": action.id})
+    finally:
+        db.close()
+
+@tool
+def add_new_employee(warehouse_id: str, name: str, skill_level: str, experience_years: float, shift: int) -> str:
+    """Add a new employee to the warehouse and calculate the new average skill level. Skill level must be Beginner, Intermediate, or Expert."""
+    db = SessionLocal()
+    try:
+        from app.db.models import Worker
+        import uuid
+        
+        # Add the new worker
+        new_worker = Worker(
+            worker_id=f"W-{uuid.uuid4().hex[:6].upper()}",
+            name=name,
+            warehouse_id=warehouse_id,
+            skill_level=skill_level,
+            experience_years=experience_years,
+            assigned_zone="A",
+            shift=shift,
+            status="PRESENT"
+        )
+        db.add(new_worker)
+        db.commit()
+        
+        # Calculate new averages
+        workers = db.query(Worker).filter(Worker.warehouse_id == warehouse_id).all()
+        exp_sum = 0
+        skill_sum = 0
+        count = len(workers)
+        if count > 0:
+            for w in workers:
+                exp_sum += (w.experience_years or 0)
+                skill_map = {"Beginner": 1.0, "Intermediate": 2.0, "Expert": 3.0}
+                skill_sum += skill_map.get(w.skill_level, 1.5)
+            avg_exp = exp_sum / count
+            avg_skill = skill_sum / count
+            
+        return json.dumps({
+            "status": "Employee added successfully",
+            "worker_id": new_worker.worker_id,
+            "new_average_skill": round(avg_skill, 2),
+            "new_average_experience": round(avg_exp, 2)
+        })
     finally:
         db.close()

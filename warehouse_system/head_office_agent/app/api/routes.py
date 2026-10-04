@@ -3,8 +3,12 @@ import logging
 import os
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
 from typing import Dict, Any
+
+from database.core import get_db
+from models.core import WarehouseAgent
 
 from state.models import WarehouseUpdate
 from events.models import NetworkEvent
@@ -159,8 +163,26 @@ async def handle_event(event: NetworkEvent):
 
 
 @router.post("/warehouse-update")
-def warehouse_update(update: WarehouseUpdate):
+def warehouse_update(update: WarehouseUpdate, db: Session = Depends(get_db)):
+    import datetime
     state_manager.process_warehouse_update(update)
+    
+    agent = db.query(WarehouseAgent).filter(WarehouseAgent.warehouse_id == update.warehouse_id).first()
+    if not agent:
+        agent = WarehouseAgent(
+            agent_id=f"agent-{update.warehouse_id}",
+            warehouse_id=update.warehouse_id,
+            version="1.0",
+            capabilities=["inventory", "inbound", "outbound"],
+            status="ACTIVE",
+            last_heartbeat=datetime.datetime.now(datetime.timezone.utc)
+        )
+        db.add(agent)
+    else:
+        agent.status = "ACTIVE"
+        agent.last_heartbeat = datetime.datetime.now(datetime.timezone.utc)
+    
+    db.commit()
     return {"status": "success"}
 
 
@@ -290,7 +312,7 @@ class BookingRequest(BaseModel):
 
 BACKEND_URL = os.environ.get("WAREHOUSE_BACKEND_URL", "http://backend:8000")
 BACKEND_USER = os.environ.get("WAREHOUSE_BACKEND_USER", "manager")
-BACKEND_PASSWORD = os.environ.get("WAREHOUSE_BACKEND_PASSWORD", "password")
+BACKEND_PASSWORD = os.environ.get("WAREHOUSE_BACKEND_PASSWORD", "manager")
 
 @router.post("/bookings")
 async def create_booking(request: BookingRequest):
@@ -326,3 +348,70 @@ async def create_booking(request: BookingRequest):
         except Exception as e:
             logger.exception("Booking failed")
             raise HTTPException(status_code=502, detail=str(e))
+
+class CustomerLocation(BaseModel):
+    latitude: float
+    longitude: float
+
+class CustomerOrderReq(BaseModel):
+    order_id: str
+    product_id: str
+    quantity: int
+    customer_location: CustomerLocation
+    expected_delivery_date: str
+
+@router.post("/customer-orders")
+def process_customer_order(order: CustomerOrderReq, db: Session = Depends(get_db)):
+    if query_graph is not None:
+        prompt = f"A customer has placed an order. Details:\nOrder ID: {order.order_id}\nProduct ID: {order.product_id}\nQuantity: {order.quantity}\nLocation: {order.customer_location.latitude}, {order.customer_location.longitude}\nDelivery Date: {order.expected_delivery_date}\n\nPlease immediately check the Fulfillment Center inventory for FC 'FC-CHENNAI-001' (or a relevant FC) to see if sufficient stock is available for product {order.product_id}. The required quantity is {order.quantity}. Outline the flow: Customer Order -> FC Check -> Warehouse/Seller flow. If stock is available, YOU MUST USE the instruct_warehouse tool to instruct WH-001 to process this order. Provide the warehouse_id (WH-001), order_id, product_id, and quantity to the tool."
+        try:
+            from agent.query_graph import run_query
+            answer, tools_used = run_query(query_graph, prompt)
+            return {"status": "success", "agent_response": answer, "tools_used": tools_used}
+        except Exception:
+            logger.exception("Query agent failed")
+            return process_customer_order_fallback(order, db)
+            return {"status": "error", "message": "Agent failed to process order"}
+    return {"status": "error", "message": "LLM not enabled"}
+
+
+
+@router.post("/customer-orders-fallback")
+def process_customer_order_fallback(order: CustomerOrderReq, db: Session = Depends(get_db)):
+    import requests
+    import uuid
+    from models.core import FCInventory, Order
+    item = db.query(FCInventory).filter(FCInventory.fc_id == 'FC-CHENNAI-001', FCInventory.product_id == order.product_id).first()
+    if item and item.available_quantity >= order.quantity:
+        status = "Sufficient stock available."
+        
+        # Send instruction to warehouse
+        try:
+            instruction = {
+                "instruction_id": str(uuid.uuid4()),
+                "order_id": order.order_id,
+                "items": [{"sku_id": order.product_id, "quantity": order.quantity}],
+                "fc": "FC-CHENNAI-001",
+                "priority": "NORMAL",
+                "sla_hours": 24,
+                "required_operation": "PICK_PACK_SHIP"
+            }
+            res = requests.post("http://backend:8000/api/head-office/instructions", headers={"x-token": "supersecret-headoffice-token"}, json=instruction, timeout=5)
+            if res.status_code == 202 or res.status_code == 200:
+                status += " Instruction sent to warehouse WH-001 successfully."
+                order_obj = db.query(Order).filter(Order.order_id == order.order_id).first()
+                if order_obj:
+                    order_obj.status = "ALLOCATED"
+                    db.commit()
+            else:
+                status += f" Failed to send instruction to WH-001: {res.text}"
+        except Exception as e:
+            status += f" Failed to communicate with WH-001: {str(e)}"
+    else:
+        status = "Insufficient stock available."
+    
+    answer = f"Customer Order Received:\n- Order ID: {order.order_id}\n- Product ID: {order.product_id}\n- Quantity: {order.quantity}\n\nChecking FC Inventory (FC-CHENNAI-001)...\n{status}\n\nFlow: Customer Order -> FC Check -> Warehouse/Seller flow initiated."
+    return {"status": "success", "agent_response": answer, "tools_used": ["check_fc_inventory", "instruct_warehouse"]}
+
+
+

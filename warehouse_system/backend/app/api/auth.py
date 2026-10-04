@@ -31,10 +31,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = db.query(User).filter(User.username == form_data.username).first()
     
     # Auto-create hackathon test users if they don't exist
-    if not user and form_data.username in ['company', 'deliver', 'manager']:
+    if not user and form_data.username in ['company', 'deliver', 'manager', 'inbound', 'outbound', 'manager2', 'inbound2', 'outbound2']:
         from app.core.security import get_password_hash
-        role = "MANAGER" if form_data.username == "manager" else "WORKER"
-        new_user = User(username=form_data.username, hashed_password=get_password_hash(form_data.password), role=role, warehouse_id="WH01")
+        role = "MANAGER" if "manager" in form_data.username else "WORKER"
+        new_user = User(username=form_data.username, hashed_password=get_password_hash(form_data.password), role=role, warehouse_id=settings.WAREHOUSE_ID)
         db.add(new_user)
         db.commit()
         db.refresh(new_user)

@@ -27,6 +27,26 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - HEAD_OFFICE_BASE_URL=http://head-office:8000
+      - WAREHOUSE_ID=WH-001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/models:/app/models
+
+  backend-2:
+    build: 
+      context: ./backend
+    ports:
+      - "8002:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - HEAD_OFFICE_BASE_URL=http://head-office:8000
+      - WAREHOUSE_ID=WH-002
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,34 +68,106 @@ services:
   manager-frontend:
     build:
       context: ./manager-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3000:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend:8000/api
     depends_on:
       - backend
+
+  manager-frontend-2:
+    build:
+      context: ./manager-frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "3010:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend-2:8000/api
+    depends_on:
+      - backend-2
 
   inbound-frontend:
     build:
       context: ./inbound-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3001:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend:8000/api
     depends_on:
       - backend
 
   outbound-frontend:
     build:
       context: ./outbound-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3002:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend:8000/api
     depends_on:
       - backend
 
   operations-frontend:
     build:
       context: ./operations-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3003:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend:8000/api
     depends_on:
       - backend
+
+  inbound-frontend-2:
+    build:
+      context: ./inbound-frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "3011:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend-2:8000/api
+    depends_on:
+      - backend-2
+
+  outbound-frontend-2:
+    build:
+      context: ./outbound-frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "3012:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend-2:8000/api
+    depends_on:
+      - backend-2
+
+  operations-frontend-2:
+    build:
+      context: ./operations-frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "3013:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend-2:8000/api
+    depends_on:
+      - backend-2
 
   head-office:
     build:
@@ -88,16 +180,26 @@ services:
   head-office-frontend:
     build:
       context: ./head-office-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3004:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://head-office:8000
     depends_on:
       - head-office
 
   booking-site-frontend:
     build:
       context: ./booking-site-frontend
+      args:
+        - VITE_API_URL=/api
     ports:
       - "3005:80"
+    environment:
+      - VITE_API_URL=/api
+      - API_PROXY_PASS=http://backend:8000/api
     depends_on:
       - backend
 

@@ -2,6 +2,25 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Building2, Package, ShoppingCart } from 'lucide-react';
 import api from '../lib/api';
 
+interface NetworkWarehouse {
+  status: string;
+  orders: number;
+  workers: number;
+  workers_required: number;
+  capacity_utilization: number;
+  risk_score: number;
+  predicted_workload: string | number;
+}
+interface NetworkState {
+  warehouses: Record<string, NetworkWarehouse>;
+  total_warehouses: number;
+  overall_health: string;
+  average_risk: number;
+  worker_shortages: number;
+  active_alerts: number;
+  pending_decisions: number;
+}
+
 interface Warehouse {
   warehouse_id: string;
   agent_id: string;
@@ -23,8 +42,10 @@ interface Order {
 
 export default function Dashboard() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [networkState, setNetworkState] = useState<NetworkState | null>(null);
   const [inventory, setInventory] = useState<Record<string, Inventory>>({});
   const [orders, setOrders] = useState<Order[]>([]);
+  const [operations, setOperations] = useState<Record<string, any[]>>({});
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -32,6 +53,24 @@ export default function Dashboard() {
       try {
         const whRes = await api.get<Warehouse[]>('/api/v1/warehouses');
         setWarehouses(whRes.data);
+        
+        try {
+          const netRes = await api.get<NetworkState>('/network-state');
+          setNetworkState(netRes.data);
+          
+          if (netRes.data && netRes.data.warehouses) {
+            const ops: Record<string, any[]> = {};
+            await Promise.all(
+              Object.keys(netRes.data.warehouses).map(async (wh_id) => {
+                try {
+                  const opRes = await api.get<any[]>(`/api/v1/warehouses/${wh_id}/operations`);
+                  ops[wh_id] = opRes.data;
+                } catch(e) {}
+              })
+            );
+            setOperations(ops);
+          }
+        } catch(e) { console.error('Failed to get network state', e); }
         
         const invRes = await api.get<Record<string, Inventory>>('/api/v1/inventory');
         setInventory(invRes.data);
@@ -53,7 +92,7 @@ export default function Dashboard() {
   const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
 
   const stats = [
-    { label: 'Warehouses Online', value: warehouses.filter(w => w.status === 'ONLINE').length, icon: Building2, color: '#00E5FF' },
+    { label: 'Warehouses Online', value: warehouses.filter(w => w.status === 'ONLINE' || w.status === 'ACTIVE').length, icon: Building2, color: '#00E5FF' },
     { label: 'Global Inventory', value: totalInv, icon: Package, color: '#00E5FF' },
     { label: 'Pending Orders', value: pendingOrders, icon: ShoppingCart, color: '#FFAB00' },
     { label: 'Active Alerts', value: 0, icon: AlertTriangle, color: '#FF1744' },
@@ -103,24 +142,65 @@ export default function Dashboard() {
             <div className="p-6 bg-white rounded-2xl border border-gray-100 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-indigo-600" />
-                Connected Warehouse Agents
+                Detailed Warehouse Reports
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {warehouses.map((wh) => (
-                  <div key={wh.warehouse_id} className="p-5 bg-gray-50 rounded-2xl border border-gray-100">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900">{wh.warehouse_id}</h3>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded ${wh.status === 'ONLINE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                        {wh.status}
-                      </span>
+              <div className="space-y-6">
+                {networkState && Object.entries(networkState.warehouses).length > 0 ? (
+                  Object.entries(networkState.warehouses).map(([wh_id, state]) => (
+                    <div key={wh_id} className="p-5 bg-gray-50 rounded-2xl border border-gray-200">
+                      <div className="flex items-center justify-between mb-4 border-b pb-2">
+                        <h3 className="text-lg font-bold text-gray-900">{wh_id}</h3>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${state.status === 'ACTIVE' || state.status === 'ONLINE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {state.status}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                        <div className="bg-white p-3 rounded shadow-sm border border-gray-100">
+                          <p className="text-xs text-gray-500 uppercase font-semibold">Active Orders</p>
+                          <p className="text-lg font-bold text-indigo-600">{state.orders}</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm border border-gray-100">
+                          <p className="text-xs text-gray-500 uppercase font-semibold">Workers (Present/Req)</p>
+                          <p className={`text-lg font-bold ${state.workers < state.workers_required ? 'text-red-600' : 'text-green-600'}`}>
+                            {state.workers} / {state.workers_required}
+                          </p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm border border-gray-100">
+                          <p className="text-xs text-gray-500 uppercase font-semibold">Capacity Util</p>
+                          <p className="text-lg font-bold text-gray-800">{(state.capacity_utilization * 100).toFixed(1)}%</p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm border border-gray-100">
+                          <p className="text-xs text-gray-500 uppercase font-semibold">Delay Risk Score</p>
+                          <p className={`text-lg font-bold ${state.risk_score > 0.5 ? 'text-red-600' : 'text-amber-600'}`}>
+                            {(state.risk_score * 100).toFixed(0)}%
+                          </p>
+                        </div>
+                        <div className="bg-white p-3 rounded shadow-sm border border-gray-100 sm:col-span-2">
+                          <p className="text-xs text-gray-500 uppercase font-semibold">Predicted Workload</p>
+                          <p className="text-lg font-bold text-gray-800">{state.predicted_workload}</p>
+                        </div>
+                      </div>
+                      
+                      {operations[wh_id] && operations[wh_id].length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1">Recent Operations</h4>
+                          <ul className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                            {operations[wh_id].slice(0, 5).map((op: any) => (
+                              <li key={op.id} className="text-sm bg-white p-2 rounded border border-gray-100 shadow-sm flex flex-col">
+                                <span className="font-medium text-gray-900">{op.type}</span>
+                                <span className="text-gray-600 mt-1">{op.description}</span>
+                                <span className="text-xs text-gray-400 mt-1">{new Date(op.timestamp).toLocaleString()}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      <p>Agent ID: {wh.agent_id}</p>
-                      <p>Last Heartbeat: {new Date(wh.last_heartbeat).toLocaleTimeString()}</p>
-                    </div>
-                  </div>
-                ))}
-                {warehouses.length === 0 && <div className="text-gray-500 p-4">No agents connected.</div>}
+                  ))
+                ) : (
+                  <div className="text-gray-500 p-4 bg-gray-50 rounded-xl border border-gray-100">No detailed reports available yet.</div>
+                )}
               </div>
             </div>
 

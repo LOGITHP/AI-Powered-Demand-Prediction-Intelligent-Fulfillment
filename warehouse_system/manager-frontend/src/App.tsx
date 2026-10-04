@@ -17,13 +17,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   if (!token) return <Navigate to="/login" replace />;
   return (
     <div className="flex flex-col h-screen bg-gray-50 text-gray-900 relative">
-      {/* UPGRADE BANNER */}
-      <div className="bg-indigo-600 text-white p-2 text-center text-sm font-semibold flex items-center justify-center gap-3 shadow-md z-50">
-        <span>🚀 System Upgraded! The new Centralized Head Office is now live.</span>
-        <a href="http://localhost:3004" className="bg-white text-indigo-700 px-3 py-1 rounded-full hover:bg-gray-100 transition-colors" style={{ textDecoration: 'none' }}>
-          Go to New Dashboard (Port 3004)
-        </a>
-      </div>
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8 relative">

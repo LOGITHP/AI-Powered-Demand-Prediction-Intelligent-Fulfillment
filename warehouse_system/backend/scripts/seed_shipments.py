@@ -1,3 +1,4 @@
+from app.core.config import settings
 import os
 import sys
 import uuid
@@ -16,7 +17,7 @@ from app.db.models import (
 def seed_real_data():
     db = SessionLocal()
     
-    WAREHOUSE_ID = "WH-001"
+    WAREHOUSE_ID = settings.WAREHOUSE_ID
     
     # 1. Products
     products = [

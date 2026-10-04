@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import engine, Base
-from app.api import auth, ml, agent, notifications, workload, head_office, approvals, ps_demo, inbound, outbound, intelligence, connection_center
+from app.api import auth, ml, agent, notifications, workload, head_office, approvals, ps_demo, inbound, outbound, intelligence, connection_center, workers
 import logging
 
 # Create DB tables
@@ -19,10 +19,11 @@ from app.services.head_office_sync import sync_warehouse_status_to_head_office
 from app.services.notification_service import tick_escalations
 
 async def background_head_office_sync():
+    from app.core.config import settings
     while True:
         try:
             db = SessionLocal()
-            sync_warehouse_status_to_head_office(db, "WH-001")
+            sync_warehouse_status_to_head_office(db, settings.WAREHOUSE_ID)
         except Exception as e:
             logging.error(f"Error in background sync: {e}")
         finally:
@@ -52,6 +53,10 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005",
+        "http://localhost:3006",
         "http://localhost:5173"
     ],
     allow_credentials=True,
@@ -71,6 +76,7 @@ app.include_router(inbound.router, prefix="/api/inbound", tags=["inbound"])
 app.include_router(outbound.router, prefix="/api/outbound", tags=["outbound"])
 app.include_router(intelligence.router, prefix="/api/intelligence", tags=["intelligence"])
 app.include_router(connection_center.router, prefix="/api/connection-center", tags=["connection_center"])
+app.include_router(workers.router, prefix="/api/workers", tags=["workers"])
 
 @app.get("/health")
 def health_check():

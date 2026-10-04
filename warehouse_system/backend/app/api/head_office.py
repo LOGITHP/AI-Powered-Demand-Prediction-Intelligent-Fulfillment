@@ -1,3 +1,4 @@
+from app.core.config import settings
 from fastapi import APIRouter, HTTPException, Header, Depends
 from typing import Optional
 from ..connection_center.canonical_models import HeadOfficeInstruction
@@ -78,9 +79,26 @@ def receive_instruction(payload: HeadOfficeInstruction, token: None = Depends(ve
     }
 
 from ..services.head_office_sync import sync_warehouse_status_to_head_office
+from app.db.models import OperationalEvent
+
+@router.get("/operations")
+def get_operations(db = Depends(get_db)):
+    """Return recent operational events and completed tasks for head office reporting."""
+    from sqlalchemy import desc
+    events = db.query(OperationalEvent).order_by(desc(OperationalEvent.created_at)).limit(50).all()
+    return [
+        {
+            "id": e.id,
+            "type": e.event_type,
+            "description": e.description,
+            "timestamp": e.created_at.isoformat() if e.created_at else None
+        }
+        for e in events
+    ]
+
 
 @router.post("/sync")
-def trigger_sync(warehouse_id: str = "WH-001", db = Depends(get_db)):
+def trigger_sync(warehouse_id: str = settings.WAREHOUSE_ID, db = Depends(get_db)):
     """
     Manually triggers a sync to the remote Head Office agent API.
     """
