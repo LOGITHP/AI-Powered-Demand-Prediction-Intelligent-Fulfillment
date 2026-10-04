@@ -30,8 +30,6 @@ function App() {
     setIsSubmitting(true)
     
     try {
-      // Generate a random order ID
-      const orderId = 'ORD-' + Math.floor(Math.random() * 100000);
       // Send booking to Head Office Agent on port 8001
       await axios.post(`http://localhost:8001/bookings`, {
         supplier: formData.origin || 'Supplier',
