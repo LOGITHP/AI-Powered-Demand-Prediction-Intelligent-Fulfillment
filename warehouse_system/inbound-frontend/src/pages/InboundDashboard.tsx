@@ -39,7 +39,7 @@ export default function InboundDashboard() {
       await api.post(`/inbound/shipments/${shipmentId}/${action}`, payload);
       fetchData();
     } catch (err) {
-      alert("Error performing action: " + (err as any).response?.data?.detail || (err as any).message);
+      alert("Error performing action: " + ((err as any).response?.data?.detail || (err as any).message));
     }
   };
 

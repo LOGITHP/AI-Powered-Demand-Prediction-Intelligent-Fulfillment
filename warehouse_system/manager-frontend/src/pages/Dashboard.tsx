@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [delayRisk, setDelayRisk] = useState<number | null>(null);
   const [activeTasks, setActiveTasks] = useState<number>(0);
   const [assignedWorkers, setAssignedWorkers] = useState<number>(0);
+  const [totalPresent, setTotalPresent] = useState<number>(50);
 
   // No chat history needed here
   const fetchLiveMetrics = async () => {
@@ -31,12 +32,15 @@ export default function Dashboard() {
       };
       
       try {
-        const [inRes, outRes] = await Promise.all([
+        const [inRes, outRes, wfRes] = await Promise.all([
           api.get('/inbound/kpis'),
-          api.get('/outbound/kpis')
+          api.get('/outbound/kpis'),
+          api.get('/ps/workforce')
         ]);
         const inbound = inRes.data;
         const outbound = outRes.data;
+        const workforce = wfRes.data;
+
         const activeTasksCount = outbound.in_queue + inbound.in_queue;
         const assignedCount = (inbound.workforce.receiving.assigned + 
                                  inbound.workforce.inspection.assigned + 
@@ -52,6 +56,7 @@ export default function Dashboard() {
         
         setActiveTasks(activeTasksCount);
         setAssignedWorkers(assignedCount);
+        setTotalPresent(workforce.manpower?.available || 50);
       } catch (e) {
         console.error("Could not fetch KPIs", e);
       }
@@ -101,7 +106,7 @@ export default function Dashboard() {
         <div className="bg-white p-6 rounded-2xl border border-gray-200 flex items-start justify-between shadow-sm hover:border-gray-300 transition-colors">
           <div>
             <p className="text-gray-500 text-sm font-medium">Workforce Availability</p>
-            <p className="text-3xl font-bold mt-2">{assignedWorkers || 0} <span className="text-sm text-gray-400 font-normal">/ 50 Present</span></p>
+            <p className="text-3xl font-bold mt-2">{assignedWorkers || 0} <span className="text-sm text-gray-400 font-normal">/ {totalPresent} Present</span></p>
           </div>
           <div className="p-3 bg-blue-500/20 rounded-xl text-blue-400">
             <Users size={24} />

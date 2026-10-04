@@ -9,7 +9,11 @@ export default function Workforce() {
     api.get('/ps/workforce').then(res => setData(res.data)).catch(console.error);
   }, []);
 
+  const [selectedShift, setSelectedShift] = useState<string>('All');
+
   if (!data) return <div className="p-8">Loading workforce data...</div>;
+
+  const filteredShifts = data.shifts.filter((w: any) => selectedShift === 'All' || w.shift === selectedShift);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto text-gray-900">
@@ -50,8 +54,16 @@ export default function Workforce() {
       <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
         <h2 className="text-xl font-bold mb-4 text-purple-900">SHIFT PLANNING</h2>
         <div className="flex gap-2 mb-4">
-          {['Morning', 'Afternoon', 'Night'].map(shift => (
-            <button key={shift} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded font-medium text-sm">{shift}</button>
+          {['All', 'Morning', 'Afternoon', 'Night'].map(shift => (
+            <button 
+              key={shift} 
+              onClick={() => setSelectedShift(shift)}
+              className={`px-4 py-2 rounded font-medium text-sm transition-colors ${
+                selectedShift === shift ? 'bg-purple-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+              }`}
+            >
+              {shift}
+            </button>
           ))}
         </div>
         <div className="overflow-x-auto">
@@ -67,7 +79,7 @@ export default function Workforce() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {data.shifts.map((w: any, i: number) => (
+              {filteredShifts.map((w: any, i: number) => (
                 <tr key={i}>
                   <td className="p-3">{w.worker}</td>
                   <td className="p-3">{w.shift}</td>

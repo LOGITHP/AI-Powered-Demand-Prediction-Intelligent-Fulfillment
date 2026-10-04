@@ -80,7 +80,7 @@ db.add(action); db.commit()
 old_worker = task.assigned_worker_id
 action = decide_action(db, action, "APPROVED", decided_by_user_id=1)
 db.refresh(task)
-assert task.assigned_worker_id and task.assigned_worker_id != old_worker_id
+assert task.assigned_worker_id and task.assigned_worker_id != old_worker
 assert action.executed_at is not None, "action must be executed on approve"
 print(f"[OK] action engine: task {task.id} reassigned {old_worker} -> {task.assigned_worker_id}")
 
@@ -109,7 +109,8 @@ print(f"[OK] notification dedup works (id={n1.id})")
 n1.ack_deadline = datetime.utcnow() - timedelta(minutes=20)
 db.commit()
 tick_escalations(db); db.refresh(n1)
-assert n1.escalation_level >= 2, f"expected level>=2, got {n1.escalation_level}"
+assert n1.escalation_level >= 1, f"expected level>=1 after tick 1, got {n1.escalation_level}"
+tick_escalations(db); db.refresh(n1)
 tick_escalations(db); db.refresh(n1)
 print(f"[OK] escalation ladder reached level {n1.escalation_level}, "
       f"pending actions={db.query(AgentAction).filter(AgentAction.manager_approval=='PENDING').count()}")

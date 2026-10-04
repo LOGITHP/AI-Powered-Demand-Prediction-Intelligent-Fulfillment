@@ -1,14 +1,113 @@
+import logging
+import re
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
+
 from app.schemas import AgentRequest
 from app.api.auth import get_current_user
 from app.agents.graph import build_graph
-from langchain_core.messages import HumanMessage
 from app.core.config import settings
+from app.db.database import SessionLocal
+from app.db.models import AgentAction, InboundShipment, Worker
+from langchain_core.messages import AIMessage, HumanMessage
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+def _audit_chat(db, warehouse_id: str, message: str, response: str,
+                tools_called=(), approval: str = "NOT_REQUIRED", result: str = "SUCCESS"):
+    """Every agent interaction (LLM or fallback) leaves an audit trail."""
+    db.add(AgentAction(
+        agent_name="WarehouseAgent",
+        warehouse_id=warehouse_id,
+        trigger="User Chat",
+        tool_called=", ".join(tools_called) if tools_called else None,
+        input_summary=message,
+        recommendation=response,
+        manager_approval=approval,
+        execution_result=result,
+        action_type="ROUTINE",
+    ))
+    db.commit()
+
+
+def _propose(db, warehouse_id: str, action_type: str, payload: dict,
+             recommendation: str, idempotency_key: str) -> AgentAction:
+    """Create a PENDING action for the manager. The Action Engine is the only
+    component allowed to mutate operational state after approval."""
+    existing = db.query(AgentAction).filter(AgentAction.idempotency_key == idempotency_key).first()
+    if existing:
+        return existing
+    action = AgentAction(
+        agent_name="WarehouseAgent",
+        warehouse_id=warehouse_id,
+        trigger="User Chat (fallback parser)",
+        action_type=action_type,
+        action_payload=payload,
+        idempotency_key=idempotency_key,
+        input_summary=recommendation,
+        recommendation=recommendation,
+        manager_approval="PENDING",
+    )
+    db.add(action)
+    db.commit()
+    return action
+
+
+def _fallback_response(db, request: AgentRequest) -> str:
+    """
+    Deterministic intent parser used when the LLM graph is unavailable.
+    State-changing intents are PROPOSED as pending actions (manager approves
+    them in the portal / via the Action Engine) - never executed directly.
+    """
+    msg = request.message.lower()
+
+    if "reallocate" in msg or ("picking" in msg and "putaway" in msg):
+        action = _propose(
+            db, request.warehouse_id, "REDISTRIBUTE_WORKERS",
+            payload={"from_zone": "PUTAWAY", "to_zone": "PICKING", "count": 3},
+            recommendation="Reallocate 3 workers from PUTAWAY to PICKING to clear the picking backlog.",
+            idempotency_key=f"fallback:redistribute:PUTAWAY:PICKING:{datetime.utcnow():%Y%m%d%H}",
+        )
+        return (f"Proposal created (action #{action.id}): move 3 workers from Putaway to Picking. "
+                "It is awaiting manager approval in the Approvals portal - no changes applied yet.")
+
+    if "allocate" in msg and "outbound" in msg:
+        match = re.search(r"worker\s*(\d+)", msg)
+        worker_id = f"worker{match.group(1).zfill(3)}" if match else "worker001"
+        worker = db.query(Worker).filter(Worker.worker_id == worker_id).first()
+        if not worker:
+            return f"Could not find worker {worker_id} in the system."
+        action = _propose(
+            db, request.warehouse_id, "ASSIGN_WORKER_ZONE",
+            payload={"worker_id": worker_id, "to_zone": "LOADING"},
+            recommendation=f"Assign {worker_id} to the Outbound (Loading) zone.",
+            idempotency_key=f"fallback:assign-zone:{worker_id}:LOADING",
+        )
+        return (f"Proposal created (action #{action.id}): assign {worker_id} to Outbound (Loading). "
+                "Awaiting manager approval - no changes applied yet.")
+
+    if "inbound" in msg and "process" in msg:
+        shipment = db.query(InboundShipment).filter(InboundShipment.status == "EXPECTED").first()
+        if not shipment:
+            return "No expected inbound shipments found to process."
+        action = _propose(
+            db, request.warehouse_id, "PROCESS_INBOUND_ARRIVAL",
+            payload={"tracking_number": shipment.tracking_number},
+            recommendation=f"Mark inbound shipment {shipment.tracking_number} as ARRIVED.",
+            idempotency_key=f"fallback:inbound-arrival:{shipment.tracking_number}",
+        )
+        return (f"Proposal created (action #{action.id}): mark shipment {shipment.tracking_number} as ARRIVED. "
+                "Awaiting manager approval.")
+
+    return (f"I could not reach the reasoning engine, so no live analysis is available for: "
+            f"\"{request.message}\". Operational changes always require manager approval.")
+
+
 @router.post("/chat")
-def chat_with_agent(request: AgentRequest, current_user = Depends(get_current_user)):
+def chat_with_agent(request: AgentRequest, current_user=Depends(get_current_user)):
     mock_responses = [
         "Based on the current metrics, I recommend reallocating 3 workers from Putaway to Picking to handle the backlog.",
         "The inbound queue is currently at 120 units. Processing time is optimal.",
@@ -17,10 +116,16 @@ def chat_with_agent(request: AgentRequest, current_user = Depends(get_current_us
         "Scenario analyzed. A 10% increase in peak volume will require 15 additional workers in the Picking zone."
     ]
     import random
-    
+
     if not settings.NVIDIA_API_KEY:
-        return {"response": f"[Demo Mode - No API Key] {random.choice(mock_responses)}"}
-        
+        response = f"[Demo Mode - No API Key] {random.choice(mock_responses)}"
+        db = SessionLocal()
+        try:
+            _audit_chat(db, request.warehouse_id, request.message, response, result="DEMO_MODE")
+        finally:
+            db.close()
+        return {"response": response}
+
     try:
         graph = build_graph()
         initial_state = {
@@ -30,98 +135,39 @@ def chat_with_agent(request: AgentRequest, current_user = Depends(get_current_us
             "user_role": current_user.role,
             "current_request": request.message
         }
-        final_state = graph.invoke(initial_state)
+        final_state = graph.invoke(initial_state, config={"recursion_limit": 25})
         response_msg = final_state["messages"][-1].content
-        return {"response": response_msg}
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        
-        from app.db.database import SessionLocal
-        from app.db.models import Notification, User, Worker, AgentAction, OutboundOrder, InboundShipment
+
+        tools_called = []
+        for m in final_state["messages"]:
+            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+                tools_called.extend(tc["name"] for tc in m.tool_calls)
+
         db = SessionLocal()
         try:
-            msg_lower = request.message.lower()
-            if "reallocate" in msg_lower or "picking" in msg_lower:
-                workers_to_move = db.query(Worker).filter(Worker.current_zone == "Putaway_A").limit(3).all()
-                for w in workers_to_move:
-                    w.current_zone = "Picking_A"
-                    w.current_task = "Reassigned to Picking backlog"
-                    user = db.query(User).filter(User.username == w.worker_id).first()
-                    if user:
-                        notif = Notification(
-                            user_id=user.id,
-                            type="INSTRUCTION",
-                            status="QUEUED",
-                            message=f"Reassigned from Putaway_A to Picking_A. Please proceed immediately."
-                        )
-                        db.add(notif)
-                db.commit()
-                final_response = "Action executed. Based on the metrics, I have reallocated 3 workers from Putaway to Picking. Instructions dispatched."
-                
-            elif "allocate" in msg_lower and "outbound" in msg_lower:
-                # E.g. "allocate a work in outbound for worker 1"
-                import re
-                match = re.search(r'worker (\d+)', msg_lower)
-                worker_num = match.group(1) if match else "1"
-                worker_id = f"worker{worker_num.zfill(3)}"
-                
-                worker = db.query(Worker).filter(Worker.worker_id == worker_id).first()
-                if worker:
-                    worker.current_zone = "Outbound_A"
-                    worker.current_task = "Process pending outbound orders"
-                    
-                    user = db.query(User).filter(User.username == worker_id).first()
-                    if user:
-                        notif = Notification(
-                            user_id=user.id,
-                            type="INSTRUCTION",
-                            status="QUEUED",
-                            message="Assigned to Outbound zone. Please begin loading the delivery partners."
-                        )
-                        db.add(notif)
-                    db.commit()
-                    final_response = f"Action executed. Assigned {worker_id} to Outbound. Notification sent."
-                else:
-                    final_response = f"Could not find {worker_id} in the system."
-                    
-            elif "inbound" in msg_lower and "process" in msg_lower:
-                shipment = db.query(InboundShipment).filter(InboundShipment.status == "EXPECTED").first()
-                if shipment:
-                    shipment.status = "ARRIVED"
-                    db.commit()
-                    final_response = f"Processed inbound data. Shipment {shipment.tracking_number} marked as ARRIVED."
-                else:
-                    final_response = "No expected inbound shipments found to process."
-            else:
-                final_response = f"Action parsed. Simulated response for: {request.message}"
-
-            # Save Agent history
-            action = AgentAction(
-                agent_name="Operations Agent",
-                warehouse_id=request.warehouse_id,
-                trigger="User Chat",
-                input_summary=request.message,
-                recommendation=final_response,
-                manager_approval="NOT_REQUIRED",
-                execution_result="SUCCESS",
-                action_type="ROUTINE"
-            )
-            db.add(action)
-            db.commit()
-
-        except Exception as inner_e:
-            import traceback
-            traceback.print_exc()
-            print("Error creating fallback notification:", inner_e)
-            final_response = "An error occurred while executing the agent action."
+            _audit_chat(db, request.warehouse_id, request.message, response_msg,
+                        tools_called=tools_called, result="SUCCESS")
         finally:
             db.close()
-            
+        return {"response": response_msg, "tools_used": tools_called}
+    except Exception as e:
+        logger.exception("Agent graph failed, using deterministic fallback")
+        db = SessionLocal()
+        try:
+            try:
+                final_response = _fallback_response(db, request)
+                _audit_chat(db, request.warehouse_id, request.message, final_response,
+                            result=f"FALLBACK (graph error: {type(e).__name__})")
+            except Exception:
+                logger.exception("Fallback parser also failed")
+                final_response = "An error occurred while executing the agent action."
+        finally:
+            db.close()
         return {"response": final_response}
 
+
 @router.get("/audit")
-def get_audit_logs(current_user = Depends(get_current_user)):
+def get_audit_logs(current_user=Depends(get_current_user)):
     from app.db.database import SessionLocal
     from app.db.models import AgentAction
     db = SessionLocal()
@@ -138,7 +184,7 @@ class ApprovalRequest(BaseModel):
     payload: Optional[dict] = None
 
 @router.post("/audit/{action_id}/approval")
-def resolve_agent_action(action_id: int, request: ApprovalRequest, current_user = Depends(get_current_user)):
+def resolve_agent_action(action_id: int, request: ApprovalRequest, current_user=Depends(get_current_user)):
     from app.db.database import SessionLocal
     from app.db.models import AgentAction
     from app.action_engine.engine import decide_action

@@ -39,47 +39,67 @@ class AgentNodes:
         # Determine problems from current_event or query
         problems = []
         shortages = []
-        
+
         event = state.get("current_event")
         query = state.get("user_query")
-        
-        if event and event.get("event_type") == "WORKER_SHORTAGE":
-            wh_id = event["warehouse_id"]
+
+        if event and event.get("type") == "WORKER_SHORTAGE":
+            wh_id = event.get("warehouse_id")
             problems.append(f"{wh_id} is experiencing a worker shortage.")
-            state["affected_warehouses"].append(wh_id)
-            
+            if wh_id not in state["affected_warehouses"]:
+                state["affected_warehouses"].append(wh_id)
+
             # Use tools to find exact shortage
             wh_shortages = self.resource_tools.find_resource_shortage("workers")
             shortages = [s for s in wh_shortages if s["warehouse_id"] == wh_id]
-            
+            # Fall back to the event payload when state has not synced yet
+            if not shortages and event.get("payload", {}).get("shortage_amount"):
+                shortages = [{
+                    "warehouse_id": wh_id,
+                    "shortage_amount": event["payload"]["shortage_amount"],
+                }]
+
         elif query:
-            if "demand" in query.lower() and "increase" in query.lower():
+            q = query.lower()
+            if "demand" in q and ("increase" in q or "surge" in q or "spike" in q):
+                import re
                 from tools.simulation_tools import SimulationTools
                 st = SimulationTools(self.state_manager)
-                scenario = {
-                    "warehouse": "WH-A",
-                    "demand_change_percent": 20
-                }
-                sim_result = st.simulate_action(scenario)
-                state["recommendation"] = {
-                    "type": "SIMULATION",
-                    "result": sim_result,
-                    "status": "SIMULATION"
-                }
-                state["final_response"] = f"Simulation complete. {sim_result.get('impact_analysis')}"
-                
-            elif "needs attention" in query.lower():
+                network = self.network_tools.get_network_state().get("warehouses", {})
+                # Use the warehouse named in the query, else the busiest one
+                target = next((wh for wh in network if wh.lower() in q), None)
+                if not target and network:
+                    target = max(network, key=lambda w: network[w].get("risk_score", 0))
+                percent_match = re.search(r"(\d+(?:\.\d+)?)\s*%", q)
+                percent = float(percent_match.group(1)) if percent_match else 10.0
+
+                if target:
+                    sim_result = st.simulate_action({
+                        "warehouse": target,
+                        "demand_change_percent": percent
+                    })
+                    state["recommendation"] = {
+                        "type": "SIMULATION",
+                        "result": sim_result,
+                        "status": "SIMULATION"
+                    }
+                    state["final_response"] = (
+                        f"Simulated a {percent}% demand change at {target}. "
+                        f"{sim_result.get('impact_analysis')}"
+                    )
+
+            elif "needs attention" in q or "risk" in q or "status" in q:
                 network_state = self.network_tools.get_network_state()
                 high_risk = []
                 for wh_id, data in network_state.get("warehouses", {}).items():
                     if data.get("risk_score", 0) > 0.8:
                         high_risk.append(wh_id)
-                
+
                 if high_risk:
                     state["final_response"] = f"Warehouse(s) {', '.join(high_risk)} needs attention due to high risk score."
                 else:
                     state["final_response"] = "No warehouses currently need critical attention."
-            
+
         state["identified_problems"] = problems
         state["resource_shortages"] = shortages
         state["timestamps"]["analyze_situation"] = datetime.utcnow().isoformat()

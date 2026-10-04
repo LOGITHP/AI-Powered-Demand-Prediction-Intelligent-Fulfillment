@@ -9,11 +9,13 @@ operational state. Every execution is:
   - journaled (OutboxEvent so write-backs / downstream fan-out survive crashes)
 
 Supported action types:
-  REASSIGN_TASK        {task_id, new_worker_id|null, reason}
-  REDISTRIBUTE_WORKERS {from_zone, to_zone, count}
+  REASSIGN_TASK          {task_id, new_worker_id|null, reason}
+  REDISTRIBUTE_WORKERS   {from_zone, to_zone, count}
+  ASSIGN_WORKER_ZONE     {worker_id, to_zone}
+  PROCESS_INBOUND_ARRIVAL {tracking_number}
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import HTTPException
@@ -128,9 +130,61 @@ def _exec_redistribute_workers(db: Session, action: AgentAction, payload: dict) 
     return {"from_zone": from_zone, "to_zone": to_zone, "moved_workers": moved}
 
 
+def _exec_assign_worker_zone(db: Session, action: AgentAction, payload: dict) -> dict:
+    """Move a single named worker to a zone and hand them a task for it."""
+    worker_id = payload.get("worker_id")
+    to_zone = (payload.get("to_zone") or "").upper()
+    if not worker_id or not to_zone:
+        raise HTTPException(status_code=400, detail="worker_id and to_zone are required")
+
+    worker = db.query(Worker).filter(Worker.worker_id == worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail=f"Worker {worker_id} not found")
+
+    from_zone = worker.assigned_zone
+    worker.assigned_zone = to_zone
+
+    task = Task(
+        warehouse_id=action.warehouse_id or worker.warehouse_id,
+        process_type=to_zone if to_zone in ("PICKING", "PUTAWAY", "LOADING", "RECEIVING") else "GENERAL",
+        priority="HIGH",
+        status="ASSIGNED",
+        assigned_worker_id=worker.worker_id,
+        instructions=f"Reassigned to {to_zone}. Context: {action.input_summary or 'manager-approved zone change'}",
+        deadline=datetime.utcnow() + timedelta(hours=4),
+    )
+    db.add(task)
+    db.flush()  # populate task.id for the audit result
+    create_notification(
+        db, user_id=worker.user_id, type="zone.changed",
+        message=f"You have been reassigned to {to_zone}. A high-priority task has been created for you.",
+        priority="high", requires_ack=True, ack_minutes=10,
+        dedup_key=f"zone.changed:{worker.worker_id}:{to_zone}",
+        payload={"from_zone": from_zone, "to_zone": to_zone, "task_created": True},
+        correlation_id=action.idempotency_key,
+    )
+    return {"worker_id": worker.worker_id, "from_zone": from_zone, "to_zone": to_zone, "task_id": task.id}
+
+
+def _exec_process_inbound_arrival(db: Session, action: AgentAction, payload: dict) -> dict:
+    from app.db.models import InboundShipment
+    tracking = payload.get("tracking_number")
+    if not tracking:
+        raise HTTPException(status_code=400, detail="tracking_number is required")
+    shipment = db.query(InboundShipment).filter(InboundShipment.tracking_number == tracking).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail=f"Shipment {tracking} not found")
+    if shipment.status in ("COMPLETED",):
+        return {"tracking_number": tracking, "status": shipment.status, "note": "already completed"}
+    shipment.status = "ARRIVED"
+    return {"tracking_number": tracking, "status": "ARRIVED"}
+
+
 ACTION_EXECUTORS = {
     "REASSIGN_TASK": _exec_reassign_task,
     "REDISTRIBUTE_WORKERS": _exec_redistribute_workers,
+    "ASSIGN_WORKER_ZONE": _exec_assign_worker_zone,
+    "PROCESS_INBOUND_ARRIVAL": _exec_process_inbound_arrival,
 }
 
 

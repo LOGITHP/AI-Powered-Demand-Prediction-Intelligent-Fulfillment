@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Package, Truck, Calendar, MapPin, CheckCircle, Clock, Zap, ShoppingCart } from 'lucide-react'
+import { Hexagon, Truck, Calendar, MapPin, CheckCircle, Clock, Zap, ShoppingCart } from 'lucide-react'
 import axios from 'axios'
 
 const PRODUCTS = [
@@ -30,15 +30,17 @@ function App() {
     setIsSubmitting(true)
     
     try {
+      // Generate a random order ID
+      const orderId = 'ORD-' + Math.floor(Math.random() * 100000);
       // Send booking to Head Office Agent on port 8001
-      await axios.post('http://localhost:8001/bookings', {
-        supplier: formData.origin,
-        expected_arrival: new Date(formData.date).toISOString(),
+      await axios.post(`http://localhost:8001/api/v1/orders/${orderId}/allocate`, {
+        order_id: orderId,
+        destination: formData.destination || 'Customer HQ',
         priority: formData.type === 'express' ? 'HIGH' : 'NORMAL',
         items: [
           {
-            product_id: formData.productId,
-            expected_quantity: formData.quantity
+            product_id: selectedProduct ? selectedProduct.name : 'Unknown Product',
+            quantity: formData.quantity
           }
         ]
       })
@@ -58,9 +60,9 @@ function App() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <div className="bg-indigo-600 p-2 rounded-lg">
-              <Package className="w-6 h-6 text-white" />
+              <Hexagon className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-bold text-gray-900">SwiftLogistics Booking</span>
+            <span className="text-xl font-bold text-gray-900">FulfillIQ Booking</span>
           </div>
           <nav className="flex gap-6">
             <a href="#" className="text-gray-600 hover:text-indigo-600 font-medium">Services</a>

@@ -4,6 +4,7 @@ from ..connection_center.canonical_models import HeadOfficeInstruction
 from ..planning.pipeline import PlanningPipeline
 from ..db.database import get_db
 from ..db.models import ConnectionMessage
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def receive_instruction(payload: HeadOfficeInstruction, token: None = Depends(ve
     if not msg:
         msg = ConnectionMessage(
             connector_id="head_office", direction="INBOUND",
-            dedup_key=ledger_key, payload=payload.dict(), status="RECEIVED",
+            dedup_key=ledger_key, payload=json.loads(payload.json()), status="RECEIVED",
         )
         db.add(msg)
         db.commit()

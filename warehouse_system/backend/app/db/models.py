@@ -268,6 +268,7 @@ class Notification(Base):
     requires_ack = Column(Boolean, default=False)
     ack_deadline = Column(DateTime, nullable=True)
     acked_at = Column(DateTime, nullable=True)
+    reply_message = Column(String, nullable=True)
     dedup_key = Column(String, nullable=True, unique=True)
     correlation_id = Column(String, nullable=True)
     escalation_level = Column(Integer, default=0)

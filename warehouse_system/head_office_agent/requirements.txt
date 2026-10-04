@@ -8,3 +8,9 @@ langgraph
 langchain-nvidia-ai-endpoints
 langchain-core
 httpx
+
+sqlalchemy
+psycopg2-binary
+passlib[bcrypt]
+python-jose[cryptography]
+websockets

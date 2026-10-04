@@ -7,18 +7,22 @@ class LLMProvider(ABC):
     @abstractmethod
     def generate_response(self, prompt: str) -> str:
         pass
-        
+
     @abstractmethod
     def select_tool(self, prompt: str, available_tools: List[str]) -> str:
         pass
-        
+
     @abstractmethod
     def summarize_state(self, state: Dict[str, Any]) -> str:
         pass
-        
+
     @abstractmethod
     def generate_explanation(self, decision: Dict[str, Any]) -> str:
         pass
+
+    def get_chat_model(self):
+        """Underlying LangChain chat model, or None for mock providers."""
+        return None
 
 class MockLLMProvider(LLMProvider):
     def generate_response(self, prompt: str) -> str:
@@ -53,6 +57,9 @@ class NvidiaLLMProvider(LLMProvider):
     def generate_response(self, prompt: str) -> str:
         response = self.llm.invoke(prompt)
         return response.content
+
+    def get_chat_model(self):
+        return self.llm
 
     def select_tool(self, prompt: str, available_tools: List[str]) -> str:
         system_prompt = f"You are a tool selector. Available tools: {', '.join(available_tools)}. Respond ONLY with the exact name of the best tool for the user's prompt. Do not add any extra text."

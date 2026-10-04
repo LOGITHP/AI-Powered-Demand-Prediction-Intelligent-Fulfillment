@@ -13,6 +13,9 @@ router = APIRouter()
 class AckRequest(BaseModel):
     status: str # SEEN, ACKNOWLEDGED
 
+class ReplyRequest(BaseModel):
+    reply: str
+
 async def notification_event_generator(user_id: int):
     """
     Background generator for Server-Sent Events (SSE).
@@ -89,3 +92,15 @@ def list_unacknowledged(current_user = Depends(get_current_user), db: Session = 
         Notification.ack_deadline != None,  # noqa: E711
         Notification.ack_deadline < datetime.utcnow(),
     ).order_by(Notification.ack_deadline.asc()).all()
+
+@router.post("/{notification_id}/reply")
+def reply_notification(notification_id: int, request: ReplyRequest, current_user = Depends(get_current_user), db: Session = Depends(get_db)):
+    notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == current_user.id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notif.reply_message = request.reply
+    notif.status = "ACKNOWLEDGED"
+    db.commit()
+    
+    return {"status": "success", "reply": notif.reply_message}

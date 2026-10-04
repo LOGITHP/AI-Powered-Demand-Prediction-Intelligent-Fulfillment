@@ -26,6 +26,7 @@ services:
       - ./backend/.env
     environment:
       - REDIS_URL=redis://redis:6379
+      - HEAD_OFFICE_BASE_URL=http://head-office:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +82,8 @@ services:
       context: ./head_office_agent
     ports:
       - "8001:8000"
+    env_file:
+      - ./backend/.env
 
   head-office-frontend:
     build:
